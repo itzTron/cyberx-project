@@ -104,28 +104,6 @@ const ToolDetail = () => {
                   ))}
                 </div>
               </GlassCard>
-
-              {/* Code Example */}
-              <GlassCard>
-                <h2 className="text-2xl font-bold text-foreground mb-6">
-                  Usage Example
-                </h2>
-                <pre className="bg-background/50 border border-border rounded-lg p-4 overflow-x-auto">
-                  <code className="text-sm font-mono text-muted-foreground">
-{`# Initialize the ${tool.name}
-from cyberx import ${tool.slug.replace(/-/g, '_')}
-
-# Create instance
-scanner = ${tool.slug.replace(/-/g, '_').replace(/^\w/, c => c.toUpperCase())}()
-
-# Run analysis
-results = scanner.run()
-
-# View results
-print(results.summary())`}
-                  </code>
-                </pre>
-              </GlassCard>
             </div>
 
             {/* Sidebar */}

@@ -74,31 +74,6 @@ const Features = () => {
         </div>
       </section>
 
-      {/* All Tools */}
-      <section className="py-16 relative z-10">
-        <div className="container mx-auto px-4">
-          <SectionHeader
-            badge="ALL TOOLS"
-            title="Comprehensive Security Tools"
-            description="Every tool you need for security research, testing, and protection."
-          />
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {tools.map((tool, index) => (
-              <ToolCard
-                key={tool.slug}
-                icon={tool.icon}
-                title={tool.name}
-                description={tool.shortDescription}
-                slug={tool.slug}
-                features={tool.features}
-                delay={index * 0.05}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-
       <Footer />
     </div>
   );

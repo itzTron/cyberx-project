@@ -50,7 +50,9 @@ const Footer = () => {
             <ul className="space-y-2">
               <li>
                 <a
-                  href="#"
+                  href="https://github.com/itzTron"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-2"
                 >
                   <Github className="w-4 h-4" />

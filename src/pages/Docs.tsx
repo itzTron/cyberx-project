@@ -109,75 +109,13 @@ const Docs = () => {
                     <li>• Git (optional, for cloning)</li>
                   </ul>
 
-                  <h3 className="text-lg font-semibold text-foreground mt-6 mb-3">Install via pip</h3>
-                  <pre className="bg-background/50 border border-border rounded-lg p-4 overflow-x-auto">
-                    <code className="text-sm font-mono text-primary">pip install cyberx</code>
-                  </pre>
-
                   <h3 className="text-lg font-semibold text-foreground mt-6 mb-3">Install from source</h3>
                   <pre className="bg-background/50 border border-border rounded-lg p-4 overflow-x-auto">
-                    <code className="text-sm font-mono text-primary">{`git clone https://github.com/yourusername/cyberx.git
+                    <code className="text-sm font-mono text-primary">{`git clone https://github.com/itzTron/CyberX.git
 cd cyberx
 pip install -r requirements.txt
 python setup.py install`}</code>
                   </pre>
-                </div>
-              </GlassCard>
-
-              {/* Quick Start */}
-              <GlassCard id="quickstart">
-                <h2 className="text-2xl font-bold text-foreground mb-4">Quick Start</h2>
-                <div className="prose prose-invert max-w-none">
-                  <p className="text-muted-foreground mb-4">
-                    After installation, you can start using CyberX right away:
-                  </p>
-
-                  <h3 className="text-lg font-semibold text-foreground mt-6 mb-3">Basic Commands</h3>
-                  <pre className="bg-background/50 border border-border rounded-lg p-4 overflow-x-auto">
-                    <code className="text-sm font-mono text-primary">{`# Show help
-cyberx --help
-
-# Run network scanner
-cyberx scan --target 192.168.1.0/24
-
-# Analyze a file for malware
-cyberx analyze --file suspicious.exe
-
-# Generate security report
-cyberx audit --output report.pdf`}</code>
-                  </pre>
-                </div>
-              </GlassCard>
-
-              {/* Best Practices */}
-              <GlassCard id="best-practices">
-                <h2 className="text-2xl font-bold text-foreground mb-4 flex items-center gap-3">
-                  <Shield className="w-6 h-6 text-primary" />
-                  Security Best Practices
-                </h2>
-                <div className="space-y-4 text-muted-foreground">
-                  <p>
-                    CyberX is designed for legitimate security research and testing. 
-                    Always follow these guidelines:
-                  </p>
-                  <ul className="space-y-2">
-                    <li className="flex items-start gap-2">
-                      <span className="text-primary">•</span>
-                      Only scan networks and systems you own or have explicit permission to test.
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-primary">•</span>
-                      Document your testing activities and obtain proper authorization.
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-primary">•</span>
-                      Report vulnerabilities responsibly to affected parties.
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-primary">•</span>
-                      Keep CyberX updated to benefit from the latest security improvements.
-                    </li>
-                  </ul>
                 </div>
               </GlassCard>
 

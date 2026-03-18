@@ -27,6 +27,29 @@ export interface Tool {
 
 export const tools: Tool[] = [
   {
+    slug: 'cyberx-security-suite',
+    name: 'CyberX Security Suite',
+    shortDescription: 'Comprehensive security toolkit with encryption, tracking, and password management',
+    description: 'The complete CyberX security suite featuring advanced encryption, access tracking, integrity verification, password vault, and self-contained local storage for maximum security and privacy.',
+    icon: Shield,
+    category: 'Security Suite',
+    priority: 'High',
+    complexity: 'Advanced',
+    impact: 'Essential for comprehensive security protection',
+    features: [
+      'AES-256 Encryption',
+      'Access Tracking',
+      'Integrity Checks',
+      'Password Vault',
+      'Self-Contained'
+    ],
+    futureEnhancements: [
+      'Multi-platform support',
+      'Cloud backup integration',
+      'Advanced threat detection'
+    ]
+  },
+  {
     slug: 'network-security-scanner',
     name: 'Network Security Scanner',
     shortDescription: 'Comprehensive network analysis and vulnerability detection',
@@ -99,78 +122,6 @@ export const tools: Tool[] = [
     ]
   },
   {
-    slug: 'secure-communication',
-    name: 'Secure Communication Tool',
-    shortDescription: 'End-to-end encrypted messaging and file transfer',
-    description: 'Secure communication platform featuring RSA + AES end-to-end encryption, secure file transfer, self-destructing messages, and Diffie-Hellman key exchange for maximum privacy.',
-    icon: MessageSquareLock,
-    category: 'Communication',
-    priority: 'High',
-    complexity: 'Advanced',
-    impact: 'Essential for confidential communications',
-    features: [
-      'RSA + AES Encryption',
-      'Secure File Transfer',
-      'Self-Destructing Messages',
-      'Diffie-Hellman Key Exchange',
-      'Forward Secrecy',
-      'Message Verification'
-    ],
-    futureEnhancements: [
-      'Voice/video encryption',
-      'Multi-device sync',
-      'Group messaging support'
-    ]
-  },
-  {
-    slug: 'malware-analyzer',
-    name: 'Malware Analyzer',
-    shortDescription: 'Static and behavioral malware analysis with YARA rules',
-    description: 'Comprehensive malware analysis tool supporting static analysis, hash checking with VirusTotal integration, behavioral analysis in sandboxed environments, and YARA rules for pattern matching.',
-    icon: Bug,
-    category: 'Threat Analysis',
-    priority: 'High',
-    complexity: 'Expert',
-    impact: 'Critical for threat investigation',
-    features: [
-      'Static Analysis',
-      'VirusTotal Integration',
-      'Behavioral Analysis',
-      'YARA Rules Support',
-      'PE/ELF Parsing',
-      'String Extraction'
-    ],
-    futureEnhancements: [
-      'Dynamic sandbox environment',
-      'ML-based classification',
-      'Automated report generation'
-    ]
-  },
-  {
-    slug: 'two-factor-auth-manager',
-    name: 'Two-Factor Authentication Manager',
-    shortDescription: 'TOTP/HOTP generator with backup code support',
-    description: 'Secure two-factor authentication manager supporting TOTP and HOTP protocols, backup code generation, QR code scanning, and hardware key integration for enhanced account security.',
-    icon: KeyRound,
-    category: 'Authentication',
-    priority: 'Medium',
-    complexity: 'Intermediate',
-    impact: 'Important for account security',
-    features: [
-      'TOTP Generator',
-      'HOTP Support',
-      'Backup Codes',
-      'QR Code Generator',
-      'Hardware Key Integration',
-      'Encrypted Storage'
-    ],
-    futureEnhancements: [
-      'Biometric authentication',
-      'Cloud backup option',
-      'Browser extension'
-    ]
-  },
-  {
     slug: 'security-audit-reporting',
     name: 'Security Audit & Reporting',
     shortDescription: 'Compliance checks and automated security reports',
@@ -216,30 +167,6 @@ export const tools: Tool[] = [
       'Video steganography',
       'AI-based detection bypass',
       'Batch processing'
-    ]
-  },
-  {
-    slug: 'dark-web-monitor',
-    name: 'Dark Web Monitor',
-    shortDescription: 'Monitor credentials and data breaches on the dark web',
-    description: 'Dark web monitoring solution for credential monitoring, data breach alerts, Tor network integration, and HaveIBeenPwned API hooks to protect your identity and sensitive data.',
-    icon: Globe,
-    category: 'Threat Intelligence',
-    priority: 'High',
-    complexity: 'Advanced',
-    impact: 'Critical for identity protection',
-    features: [
-      'Credential Monitoring',
-      'Data Breach Alerts',
-      'Tor Integration',
-      'HaveIBeenPwned API',
-      'Real-time Notifications',
-      'Historical Analysis'
-    ],
-    futureEnhancements: [
-      'Brand monitoring',
-      'Automated takedown requests',
-      'Threat actor tracking'
     ]
   },
   {

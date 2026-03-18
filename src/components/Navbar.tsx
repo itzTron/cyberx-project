@@ -24,12 +24,12 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 group">
-            <div className="relative">
-              <Shield className="w-8 h-8 text-primary transition-all duration-300 group-hover:drop-shadow-[0_0_10px_hsl(135,100%,45%)]" />
-              <Terminal className="w-4 h-4 text-primary absolute -bottom-1 -right-1" />
-            </div>
+            <img 
+              src="/cyberx.png" 
+              alt="CyberX Logo" 
+              className="h-20 w-auto transition-all duration-300 group-hover:drop-shadow-[0_0_10px_hsl(135,100%,45%)]" 
+            />
             <span className="text-xl font-bold font-mono text-foreground group-hover:text-primary transition-colors">
-              CyberX
             </span>
           </Link>
 

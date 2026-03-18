@@ -11,7 +11,7 @@ import GlassCard from '@/components/GlassCard';
 import { tools } from '@/data/tools';
 
 const stats = [
-  { value: '10+', label: 'Security Tools', icon: Shield },
+  { value: '5+', label: 'Security Tools', icon: Shield },
   { value: '100%', label: 'Open Source', icon: Terminal },
   { value: 'AES-256', label: 'Encryption', icon: Lock },
   { value: 'Fast', label: 'Performance', icon: Zap },

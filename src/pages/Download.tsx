@@ -12,7 +12,7 @@ const platforms = [
     icon: Monitor,
     version: 'v0.1.0-alpha',
     size: '~45 MB',
-    available: false,
+    available: true,
     requirements: 'Windows 10/11 (64-bit)',
   },
   {
@@ -97,9 +97,14 @@ const Download = () => {
                   </div>
                   
                   {platform.available ? (
-                    <Button className="w-full neon-border">
-                      <DownloadIcon className="w-4 h-4 mr-2" />
-                      Download
+                    <Button asChild className="w-full neon-border">
+                      <a 
+                        href={`/downloads/cyberx-${platform.name.toLowerCase()}.${platform.name === 'Windows' ? 'exe' : platform.name === 'macOS' ? 'dmg' : 'zip'}`}
+                        download={`cyberx-${platform.name.toLowerCase()}.${platform.name === 'Windows' ? 'exe' : platform.name === 'macOS' ? 'dmg' : 'zip'}`}
+                      >
+                        <DownloadIcon className="w-4 h-4 mr-2" />
+                        Download
+                      </a>
                     </Button>
                   ) : (
                     <Button variant="outline" className="w-full" disabled>
@@ -130,7 +135,7 @@ const Download = () => {
                   <p className="text-sm text-muted-foreground mb-2">Clone the repository:</p>
                   <pre className="bg-background/50 border border-border rounded-lg p-3 overflow-x-auto">
                     <code className="text-sm font-mono text-primary">
-                      git clone https://github.com/yourusername/cyberx.git
+                      git clone https://github.com/itzTron/CyberX.git
                     </code>
                   </pre>
                 </div>

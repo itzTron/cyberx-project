@@ -20,7 +20,7 @@ export const roadmapItems: RoadmapItem[] = [
     id: '2',
     title: 'CLI to GUI Conversion',
     description: 'Convert the software from command-line interface to a modern graphical user interface for better user experience.',
-    status: 'Planned',
+    status: 'In Progress',
     priority: 'High',
     phase: 'Current Semester'
   },
@@ -28,7 +28,7 @@ export const roadmapItems: RoadmapItem[] = [
     id: '3',
     title: 'Desktop Application Packaging',
     description: 'Package Python .py files into standalone desktop applications for Windows, macOS, and Linux.',
-    status: 'Planned',
+    status: 'In Progress',
     priority: 'High',
     phase: 'Current Semester'
   },
