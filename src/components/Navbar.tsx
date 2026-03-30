@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Shield, Terminal } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const navLinks = [
@@ -50,10 +50,13 @@ const Navbar = () => {
             ))}
           </div>
 
-          {/* CTA Button */}
-          <div className="hidden md:block">
+          {/* Auth Buttons */}
+          <div className="hidden md:flex items-center gap-2">
+            <Button asChild variant="outline">
+              <Link to="/signin">Sign In</Link>
+            </Button>
             <Button asChild variant="default" className="neon-border">
-              <Link to="/download">Get CyberX</Link>
+              <Link to="/signup">Sign Up</Link>
             </Button>
           </div>
 
@@ -91,11 +94,18 @@ const Navbar = () => {
                   {link.label}
                 </Link>
               ))}
-              <Button asChild variant="default" className="mt-2 neon-border">
-                <Link to="/download" onClick={() => setIsOpen(false)}>
-                  Get CyberX
-                </Link>
-              </Button>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button asChild variant="outline">
+                  <Link to="/signin" onClick={() => setIsOpen(false)}>
+                    Sign In
+                  </Link>
+                </Button>
+                <Button asChild variant="default" className="neon-border">
+                  <Link to="/signup" onClick={() => setIsOpen(false)}>
+                    Sign Up
+                  </Link>
+                </Button>
+              </div>
             </div>
           </motion.div>
         )}
