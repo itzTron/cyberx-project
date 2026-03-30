@@ -1,13 +1,22 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Check, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 
 const SignIn = () => {
+  const [email, setEmail] = useState('');
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const hasEmailValue = normalizedEmail.length > 0;
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
+  const showEmailError = hasEmailValue && !isEmailValid;
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -64,12 +73,30 @@ const SignIn = () => {
                   <label htmlFor="signin-email" className="block text-sm font-medium text-foreground mb-2">
                     Email
                   </label>
-                  <Input
-                    id="signin-email"
-                    type="email"
-                    placeholder="you@company.com"
-                    className="bg-muted/50 border-border"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="signin-email"
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="you@company.com"
+                      autoComplete="email"
+                      aria-invalid={showEmailError}
+                      className={cn(
+                        'bg-muted/50 border-border pr-10',
+                        showEmailError && 'border-destructive focus-visible:ring-destructive/40',
+                        isEmailValid && 'border-primary focus-visible:ring-primary/40',
+                      )}
+                    />
+                    {isEmailValid && (
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-primary">
+                        <Check className="h-4 w-4" />
+                      </span>
+                    )}
+                  </div>
+                  {showEmailError && (
+                    <p className="mt-2 text-sm text-destructive">Email ID is not valid.</p>
+                  )}
                 </div>
 
                 <div>
