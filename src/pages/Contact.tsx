@@ -89,10 +89,11 @@ const Contact = () => {
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                    <label htmlFor="name" className="block text-sm font-medium text-foreground mb-2">
                       Name
                     </label>
                     <Input
+                      id="name"
                       required
                       placeholder="Your name"
                       value={formData.name}
@@ -102,10 +103,11 @@ const Contact = () => {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                    <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
                       Email
                     </label>
                     <Input
+                      id="email"
                       required
                       type="email"
                       placeholder="your@email.com"
@@ -117,14 +119,14 @@ const Contact = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
+                  <label htmlFor="purpose" className="block text-sm font-medium text-foreground mb-2">
                     Purpose
                   </label>
                   <Select
                     value={formData.purpose}
                     onValueChange={(value) => setFormData({ ...formData, purpose: value })}
                   >
-                    <SelectTrigger className="bg-muted/50 border-border">
+                    <SelectTrigger id="purpose" className="bg-muted/50 border-border">
                       <SelectValue placeholder="Select purpose" />
                     </SelectTrigger>
                     <SelectContent>
@@ -141,10 +143,11 @@ const Contact = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
+                  <label htmlFor="message" className="block text-sm font-medium text-foreground mb-2">
                     Message
                   </label>
                   <Textarea
+                    id="message"
                     required
                     placeholder="Tell us what's on your mind..."
                     rows={6}

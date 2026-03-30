@@ -8,7 +8,9 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sonar:check": "node scripts/check-sonar-token.cjs",
+    "sonar:scan": "node scripts/check-sonar-token.cjs && sonar-scanner"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
