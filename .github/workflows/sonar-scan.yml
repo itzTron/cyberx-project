@@ -1,0 +1,38 @@
+name: SonarQube Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  sonar:
+    name: SonarQube analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (optional)
+        run: npm run build --if-present
+
+      - name: SonarQube scan (Docker)
+        env:
+          SONARQUBE_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
+          SONARQUBE_URL: ${{ secrets.SONARQUBE_URL }}
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/usr/src \
+            -w /usr/src \
+            sonarsource/sonar-scanner-cli:latest \
+            sonar-scanner \
+            -Dsonar.login=${{ secrets.SONARQUBE_TOKEN }} \
+            -Dsonar.host.url=${{ secrets.SONARQUBE_URL }}

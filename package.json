@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "sonar:check": "node scripts/check-sonar-token.cjs",
-    "sonar:scan": "node scripts/check-sonar-token.cjs && sonar-scanner"
+    "sonar:scan": "node scripts/run-sonar-scanner.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
