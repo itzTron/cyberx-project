@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Check, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Check, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AuthApiError, signInUser } from '@/lib/authApi';
 import { cn } from '@/lib/utils';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -11,11 +12,75 @@ import GlassCard from '@/components/GlassCard';
 
 const SignIn = () => {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState('');
+  const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+  }>({});
 
   const normalizedEmail = email.trim().toLowerCase();
   const hasEmailValue = normalizedEmail.length > 0;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
-  const showEmailError = hasEmailValue && !isEmailValid;
+  const showEmailError = hasEmailValue && !isEmailValid && !fieldErrors.email;
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitSuccess('');
+    setFormError('');
+
+    const nextFieldErrors: {
+      email?: string;
+      password?: string;
+    } = {};
+
+    if (!normalizedEmail) {
+      nextFieldErrors.email = 'Email address is required.';
+    } else if (!isEmailValid) {
+      nextFieldErrors.email = 'Enter a valid email address.';
+    }
+
+    if (!password) {
+      nextFieldErrors.password = 'Password is required.';
+    }
+
+    setFieldErrors(nextFieldErrors);
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      return;
+    }
+
+    setFieldErrors({});
+    setIsSubmitting(true);
+
+    try {
+      const response = await signInUser({
+        email: normalizedEmail,
+        password,
+      });
+
+      setSubmitSuccess(`${response.message} Logged in as ${response.user.email}.`);
+      setEmail('');
+      setPassword('');
+    } catch (error) {
+      if (error instanceof AuthApiError) {
+        if (error.field) {
+          setFieldErrors((current) => ({
+            ...current,
+            [error.field]: error.message,
+          }));
+        } else {
+          setFormError(error.message);
+        }
+      } else {
+        setFormError('Unable to sign in right now. Please try again in a moment.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -68,7 +133,7 @@ const SignIn = () => {
                 </p>
               </div>
 
-              <form className="space-y-5" onSubmit={(event) => event.preventDefault()}>
+              <form className="space-y-5" onSubmit={handleSubmit} noValidate>
                 <div>
                   <label htmlFor="signin-email" className="block text-sm font-medium text-foreground mb-2">
                     Email
@@ -78,13 +143,16 @@ const SignIn = () => {
                       id="signin-email"
                       type="email"
                       value={email}
-                      onChange={(event) => setEmail(event.target.value)}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        setFieldErrors((current) => ({ ...current, email: undefined }));
+                      }}
                       placeholder="you@company.com"
                       autoComplete="email"
-                      aria-invalid={showEmailError}
+                      aria-invalid={Boolean(fieldErrors.email) || showEmailError}
                       className={cn(
                         'bg-muted/50 border-border pr-10',
-                        showEmailError && 'border-destructive focus-visible:ring-destructive/40',
+                        (fieldErrors.email || showEmailError) && 'border-destructive focus-visible:ring-destructive/40',
                         isEmailValid && 'border-primary focus-visible:ring-primary/40',
                       )}
                     />
@@ -94,7 +162,8 @@ const SignIn = () => {
                       </span>
                     )}
                   </div>
-                  {showEmailError && (
+                  {fieldErrors.email && <p className="mt-2 text-sm text-destructive">{fieldErrors.email}</p>}
+                  {!fieldErrors.email && showEmailError && (
                     <p className="mt-2 text-sm text-destructive">Email ID is not valid.</p>
                   )}
                 </div>
@@ -111,13 +180,34 @@ const SignIn = () => {
                   <Input
                     id="signin-password"
                     type="password"
+                    value={password}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      setFieldErrors((current) => ({ ...current, password: undefined }));
+                    }}
                     placeholder="Enter your password"
-                    className="bg-muted/50 border-border"
+                    autoComplete="current-password"
+                    aria-invalid={Boolean(fieldErrors.password)}
+                    className={cn(
+                      'bg-muted/50 border-border',
+                      fieldErrors.password && 'border-destructive focus-visible:ring-destructive/40',
+                    )}
                   />
+                  {fieldErrors.password && <p className="mt-2 text-sm text-destructive">{fieldErrors.password}</p>}
                 </div>
 
-                <Button type="submit" size="lg" className="w-full neon-border">
-                  Sign In
+                {formError && <p className="text-sm text-destructive">{formError}</p>}
+                {submitSuccess && <p className="text-sm text-primary">{submitSuccess}</p>}
+
+                <Button type="submit" size="lg" className="w-full neon-border" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <span className="inline-flex items-center gap-2">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Signing in...
+                    </span>
+                  ) : (
+                    'Sign In'
+                  )}
                 </Button>
               </form>
 
