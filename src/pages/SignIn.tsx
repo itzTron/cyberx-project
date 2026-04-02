@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Check, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 
 const SignIn = () => {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,6 +65,7 @@ const SignIn = () => {
       setSubmitSuccess(`${response.message} Logged in as ${response.user.email}.`);
       setEmail('');
       setPassword('');
+      navigate(`/${response.user.username}`);
     } catch (error) {
       if (error instanceof AuthApiError) {
         if (error.field) {

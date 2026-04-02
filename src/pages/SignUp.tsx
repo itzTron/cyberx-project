@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Check, LoaderCircle, ShieldPlus, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 
 const SignUp = () => {
+  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,6 +73,9 @@ const SignUp = () => {
       setName('');
       setEmail('');
       setPassword('');
+      if (!response.emailConfirmationRequired) {
+        navigate(`/${response.user.username}`);
+      }
     } catch (error) {
       if (error instanceof AuthApiError) {
         if (error.field) {

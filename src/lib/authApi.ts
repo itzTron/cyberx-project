@@ -58,8 +58,10 @@ export type SignUpSuccessResponse = {
   status: 201;
   message: string;
   user: {
+    id: string;
     name: string;
     email: string;
+    username: string;
   };
   emailConfirmationRequired: boolean;
 };
@@ -71,6 +73,7 @@ export type SignInSuccessResponse = {
     id: string;
     email: string;
     name: string;
+    username: string;
   };
 };
 
@@ -111,8 +114,23 @@ const validatePayload = ({ name, email, password }: SignUpPayload): ApiFieldErro
   return null;
 };
 
-const mapSupabaseAuthError = (message: string): AuthApiError => {
+const mapSupabaseAuthError = ({
+  message,
+  code,
+}: {
+  message: string;
+  code?: string;
+}): AuthApiError => {
   const normalized = message.toLowerCase();
+
+  if (code === 'over_email_send_rate_limit' || normalized.includes('email rate limit exceeded')) {
+    return new AuthApiError({
+      message:
+        'Supabase email send limit is reached for now. Wait a bit or increase Auth email rate limits in Supabase dashboard.',
+      status: 429,
+      code: 'UNKNOWN_ERROR',
+    });
+  }
 
   if (normalized.includes('already registered') || normalized.includes('already been registered')) {
     return new AuthApiError({
@@ -207,6 +225,67 @@ const getAuthClient = () => {
   return getSupabaseClient();
 };
 
+const normalizeUsername = (value: string) =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+const buildFallbackUsername = ({
+  userId,
+  fullName,
+  email,
+}: {
+  userId: string;
+  fullName: string;
+  email: string;
+}) => {
+  const fromName = normalizeUsername(fullName);
+  if (fromName) {
+    return fromName;
+  }
+
+  const emailPrefix = normalizeUsername((email || '').split('@')[0] || '');
+  if (emailPrefix) {
+    return emailPrefix;
+  }
+
+  return `user-${userId.slice(0, 6).toLowerCase()}`;
+};
+
+const resolveProfileUsername = async ({
+  userId,
+  fullName,
+  email,
+}: {
+  userId: string;
+  fullName: string;
+  email: string;
+}) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('username')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!error && data?.username) {
+      return data.username as string;
+    }
+  } catch (error) {
+    console.error('Unable to resolve username from profile:', error);
+  }
+
+  return buildFallbackUsername({
+    userId,
+    fullName,
+    email,
+  });
+};
+
 export const signUpUser = async ({ name, email, password }: SignUpPayload): Promise<SignUpSuccessResponse> => {
   const supabase = getAuthClient();
 
@@ -233,7 +312,10 @@ export const signUpUser = async ({ name, email, password }: SignUpPayload): Prom
   });
 
   if (error) {
-    throw mapSupabaseAuthError(error.message);
+    throw mapSupabaseAuthError({
+      message: error.message,
+      code: error.code,
+    });
   }
 
   if (!data.user) {
@@ -245,6 +327,11 @@ export const signUpUser = async ({ name, email, password }: SignUpPayload): Prom
   }
 
   const fullName = (data.user.user_metadata.full_name as string | undefined)?.trim() || name.trim();
+  const username = await resolveProfileUsername({
+    userId: data.user.id,
+    fullName,
+    email: normalizedEmail,
+  });
 
   return {
     status: 201,
@@ -252,8 +339,10 @@ export const signUpUser = async ({ name, email, password }: SignUpPayload): Prom
       ? 'Account created successfully.'
       : 'Account created. Verify your email before signing in.',
     user: {
+      id: data.user.id,
       name: fullName,
       email: normalizedEmail,
+      username,
     },
     emailConfirmationRequired: !Boolean(data.session),
   };
@@ -287,7 +376,10 @@ export const signInUser = async ({ email, password }: SignInPayload): Promise<Si
   });
 
   if (error) {
-    throw mapSupabaseAuthError(error.message);
+    throw mapSupabaseAuthError({
+      message: error.message,
+      code: error.code,
+    });
   }
 
   if (!data.user) {
@@ -318,6 +410,11 @@ export const signInUser = async ({ email, password }: SignInPayload): Promise<Si
       id: data.user.id,
       email: normalizedEmail,
       name: (data.user.user_metadata.full_name as string | undefined)?.trim() || '',
+      username: await resolveProfileUsername({
+        userId: data.user.id,
+        fullName: (data.user.user_metadata.full_name as string | undefined)?.trim() || '',
+        email: normalizedEmail,
+      }),
     },
   };
 };
