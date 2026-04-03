@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, LayoutDashboard, LogOut, Menu, Repeat, User, UserPlus, X } from 'lucide-react';
+import { ChevronDown, Clock3, LayoutDashboard, LogOut, Menu, Repeat, User, UserPlus, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -24,6 +24,7 @@ const reservedTopLevelRoutes = new Set([
   'tools',
   'dashboard',
   'profile',
+  'activity',
   'roadmap',
   'download',
   'docs',
@@ -59,7 +60,7 @@ const Navbar = () => {
       }
 
       if (href === '/dashboard') {
-        return location.pathname === '/dashboard' || location.pathname === '/profile' || isUsernameRoute;
+        return location.pathname === '/dashboard' || location.pathname === '/profile' || location.pathname === '/activity' || isUsernameRoute;
       }
 
       return location.pathname === href;
@@ -219,6 +220,12 @@ const Navbar = () => {
                       Profile Settings
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/activity" className="cursor-pointer">
+                      <Clock3 className="mr-2 h-4 w-4" />
+                      Latest Activity
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     disabled={isSigningOut}
@@ -324,6 +331,11 @@ const Navbar = () => {
                     <Button asChild variant="outline">
                       <Link to="/profile" onClick={() => setIsOpen(false)}>
                         Profile Settings
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link to="/activity" onClick={() => setIsOpen(false)}>
+                        Latest Activity
                       </Link>
                     </Button>
                     <Button

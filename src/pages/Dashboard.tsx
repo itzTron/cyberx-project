@@ -858,7 +858,7 @@ const Dashboard = () => {
                       </CardContent>
                     </Card>
 
-                    <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+                    <div className="grid gap-6">
                       <Card>
                         <CardHeader>
                           <CardTitle className="text-xl">Repositories</CardTitle>
@@ -985,30 +985,6 @@ const Dashboard = () => {
                           )}
 
                           {repositoryActionStatus && <p className="text-sm text-muted-foreground">{repositoryActionStatus}</p>}
-                        </CardContent>
-                      </Card>
-
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-xl">Latest Activity</CardTitle>
-                          <CardDescription>Recent repository and profile actions.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          {activityLogs.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">No activity logged yet.</p>
-                          ) : (
-                            <div className="space-y-3">
-                              {activityLogs.slice(0, 12).map((log) => (
-                                <div key={log.id} className="rounded-md border border-border p-3">
-                                  <p className="text-sm font-medium text-foreground">{log.activity_type}</p>
-                                  <p className="text-xs text-muted-foreground mt-1">{formatDateTime(log.created_at)}</p>
-                                  <p className="text-xs text-muted-foreground mt-2 break-all">
-                                    {JSON.stringify(log.activity_context)}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </CardContent>
                       </Card>
                     </div>
