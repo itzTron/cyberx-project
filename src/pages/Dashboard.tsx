@@ -15,6 +15,7 @@ import {
   Pencil,
   PlusCircle,
   RefreshCw,
+  Rocket,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -53,6 +54,7 @@ import {
   signOutDashboardUser,
   updateRepositoryVisibility,
   updateProfileReadme,
+  updateRepositoryToolListVisibility,
   uploadRepositoryFiles,
   type DashboardBootstrap,
   type HubActivityLog,
@@ -655,6 +657,35 @@ const Dashboard = () => {
     }
   };
 
+  const handleRepositoryToolListState = async (repo: HubRepository, showInToolList: boolean) => {
+    if (showInToolList && repo.visibility !== 'public') {
+      setRepositoryActionStatus('Make the repository public before publishing it to the public tool list.');
+      return;
+    }
+
+    setIsUpdatingRepository(true);
+    setRepositoryActionStatus('');
+
+    try {
+      await updateRepositoryToolListVisibility({
+        repoId: repo.id,
+        showInToolList,
+      });
+      setRepositoryActionStatus(
+        showInToolList
+          ? `Repository "${repo.name}" is now listed on the public tool list.`
+          : `Repository "${repo.name}" was removed from the public tool list.`,
+      );
+      await refreshRepositories();
+      await refreshActivity();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update public tool list visibility.';
+      setRepositoryActionStatus(message);
+    } finally {
+      setIsUpdatingRepository(false);
+    }
+  };
+
   const openDeleteDialog = (repo: HubRepository) => {
     setDeleteTargetRepository(repo);
     setDeleteRepositoryInput('');
@@ -921,6 +952,11 @@ const Dashboard = () => {
                                             Archived
                                           </span>
                                         )}
+                                        {repo.show_in_tool_list && (
+                                          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/30">
+                                            Tool List
+                                          </span>
+                                        )}
                                       </div>
                                       <p className="text-sm text-muted-foreground mt-1">{repo.description || 'No description'}</p>
                                       <p className="text-xs text-muted-foreground mt-2">Updated: {formatDateTime(repo.updated_at)}</p>
@@ -941,6 +977,20 @@ const Dashboard = () => {
                                           <EyeOff className="mr-2 h-4 w-4" />
                                           Make Private
                                         </DropdownMenuItem>
+                                        {repo.show_in_tool_list ? (
+                                          <DropdownMenuItem onSelect={() => void handleRepositoryToolListState(repo, false)}>
+                                            <Rocket className="mr-2 h-4 w-4" />
+                                            Remove from Tool List
+                                          </DropdownMenuItem>
+                                        ) : (
+                                          <DropdownMenuItem
+                                            disabled={repo.visibility !== 'public'}
+                                            onSelect={() => void handleRepositoryToolListState(repo, true)}
+                                          >
+                                            <Rocket className="mr-2 h-4 w-4" />
+                                            Push to Public Tool List
+                                          </DropdownMenuItem>
+                                        )}
                                         <DropdownMenuSeparator />
                                         {repo.archived_at ? (
                                           <DropdownMenuItem

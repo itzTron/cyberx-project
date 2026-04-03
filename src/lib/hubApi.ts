@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/lib/supabase';
+import JSZip from 'jszip';
 
 export type RepositoryVisibility = 'public' | 'private';
 
@@ -9,6 +10,7 @@ export type HubRepository = {
   slug: string;
   description: string;
   visibility: RepositoryVisibility;
+  show_in_tool_list: boolean;
   readme_md: string;
   archived_at: string | null;
   created_at: string;
@@ -82,7 +84,10 @@ export type UploadRepositoryFilesInput = {
 const MAX_FILES_PER_UPLOAD = 30;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const PROFILE_SELECT_COLUMNS = 'id, email, full_name, username, profile_readme, bio, phone_number, avatar_url';
+const REPOSITORY_SELECT_COLUMNS_BASE = 'id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at';
+const REPOSITORY_SELECT_COLUMNS_WITH_TOOL_LIST = `${REPOSITORY_SELECT_COLUMNS_BASE}, show_in_tool_list`;
 const DEFAULT_PROFILE_REPOSITORY_DESCRIPTION = 'Default profile repository for dashboard README.';
+let repositoriesHasToolListColumnCache: boolean | null = null;
 
 const extensionLanguageMap: Record<string, string> = {
   ts: 'typescript',
@@ -131,6 +136,14 @@ const normalizeRepositoryPath = (value: string) =>
     .join('/')
     .toLowerCase();
 
+const normalizeZipFilePath = (value: string) =>
+  value
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .split('/')
+    .filter(Boolean)
+    .join('/');
+
 const readFileAsDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -170,6 +183,27 @@ const hasNullByte = (buffer: ArrayBuffer) => {
   return false;
 };
 
+const decodeDataUrlToBytes = (dataUrl: string) => {
+  const separatorIndex = dataUrl.indexOf(',');
+  if (separatorIndex === -1) {
+    return new TextEncoder().encode(dataUrl);
+  }
+
+  const metadata = dataUrl.slice(0, separatorIndex);
+  const payload = dataUrl.slice(separatorIndex + 1);
+
+  if (/;base64/i.test(metadata)) {
+    const binaryString = atob(payload);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let index = 0; index < binaryString.length; index += 1) {
+      bytes[index] = binaryString.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  return new TextEncoder().encode(decodeURIComponent(payload));
+};
+
 const shouldTreatAsBinary = ({ file, path, buffer }: { file: File; path: string; buffer: ArrayBuffer }) => {
   const extension = path.split('.').pop()?.toLowerCase() || '';
   const isKnownTextExtension = Boolean(extensionLanguageMap[extension]);
@@ -202,6 +236,50 @@ const buildUsernameCandidate = ({ fullName, email, userId }: { fullName: string;
 
   return `user-${userId.slice(0, 6).toLowerCase()}`;
 };
+
+const isMissingColumnError = (error: any, columnName: string) => {
+  if (!error) {
+    return false;
+  }
+
+  return (
+    error.code === '42703' ||
+    (typeof error.message === 'string' &&
+      error.message.toLowerCase().includes('does not exist') &&
+      error.message.toLowerCase().includes(columnName.toLowerCase()))
+  );
+};
+
+const hasRepositoryToolListColumn = async (supabase: any, forceRefresh = false) => {
+  if (!forceRefresh && repositoriesHasToolListColumnCache !== null) {
+    return repositoriesHasToolListColumnCache;
+  }
+
+  const { error } = await supabase.from('repositories').select('show_in_tool_list' as any).limit(1);
+  if (error) {
+    if (isMissingColumnError(error, 'show_in_tool_list')) {
+      repositoriesHasToolListColumnCache = false;
+      return false;
+    }
+
+    throw new Error(error.message);
+  }
+
+  repositoriesHasToolListColumnCache = true;
+  return true;
+};
+
+const getRepositorySelectColumns = async (supabase: any) => {
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase);
+  return hasToolListColumn ? REPOSITORY_SELECT_COLUMNS_WITH_TOOL_LIST : REPOSITORY_SELECT_COLUMNS_BASE;
+};
+
+const mapRepositoryRecord = (record: any): HubRepository => ({
+  ...(record || {}),
+  show_in_tool_list: Boolean(record?.show_in_tool_list),
+});
+
+const mapRepositoryList = (records: any[] | null | undefined): HubRepository[] => (records || []).map(mapRepositoryRecord);
 
 const ensureAuthenticatedUser = async () => {
   const supabase = getSupabaseClient();
@@ -544,11 +622,12 @@ const ensureDefaultProfileRepository = async ({
   const repoSlug = getProfileRepositorySlug(username, userId);
   const legacyRepoSlug = getLegacyProfileRepositorySlug(username, userId);
   const profileFilePath = getProfileRepositoryFilePath(username, userId);
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
 
   const fetchBySlug = async (slug: string) => {
     const { data, error } = await supabase
       .from('repositories')
-      .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+      .select(repositorySelectColumns as any)
       .eq('owner_id', userId)
       .eq('slug', slug)
       .maybeSingle();
@@ -573,7 +652,7 @@ const ensureDefaultProfileRepository = async ({
           slug: repoSlug,
         })
         .eq('id', legacyRepository.id)
-        .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+        .select(repositorySelectColumns as any)
         .single();
 
       if (renameError) {
@@ -595,7 +674,7 @@ const ensureDefaultProfileRepository = async ({
         visibility: 'public',
         readme_md: profileMarkdown,
       })
-      .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+      .select(repositorySelectColumns as any)
       .single();
 
     if (error) {
@@ -657,7 +736,7 @@ const ensureDefaultProfileRepository = async ({
   }
 
   return {
-    repository: existingRepository,
+    repository: mapRepositoryRecord(existingRepository),
     createdNow,
     profileFilePath,
   };
@@ -665,6 +744,7 @@ const ensureDefaultProfileRepository = async ({
 
 export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
   const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
@@ -709,7 +789,7 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
     await Promise.all([
       supabase
         .from('repositories')
-        .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+        .select(repositorySelectColumns as any)
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false }),
       supabase
@@ -738,7 +818,7 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
       avatarUrl: profile.avatar_url || '',
     },
     profileReadme: resolvedProfileReadme,
-    repositories: (repositories || []) as HubRepository[],
+    repositories: mapRepositoryList(repositories),
     activityLogs: (activityLogs || []) as HubActivityLog[],
   };
 };
@@ -942,9 +1022,10 @@ export const updateProfileReadme = async (profileReadme: string) => {
 
 export const listRepositories = async () => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
   const { data, error } = await supabase
     .from('repositories')
-    .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+    .select(repositorySelectColumns as any)
     .eq('owner_id', user.id)
     .order('updated_at', { ascending: false });
 
@@ -952,14 +1033,15 @@ export const listRepositories = async () => {
     throw new Error(error.message);
   }
 
-  return (data || []) as HubRepository[];
+  return mapRepositoryList(data);
 };
 
 export const listPushableRepositories = async () => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
   const { data, error } = await supabase
     .from('repositories')
-    .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+    .select(repositorySelectColumns as any)
     .or(`owner_id.eq.${user.id},visibility.eq.public`)
     .order('updated_at', { ascending: false });
 
@@ -967,7 +1049,30 @@ export const listPushableRepositories = async () => {
     throw new Error(error.message);
   }
 
-  return (data || []) as HubRepository[];
+  return mapRepositoryList(data);
+};
+
+export const listPublicToolRepositories = async () => {
+  const supabase = getSupabaseClient();
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase, true);
+  if (!hasToolListColumn) {
+    return [];
+  }
+
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
+  const { data, error } = await supabase
+    .from('repositories')
+    .select(repositorySelectColumns as any)
+    .eq('visibility', 'public')
+    .eq('show_in_tool_list', true)
+    .is('archived_at', null)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return mapRepositoryList(data);
 };
 
 export const listActivityLogs = async () => {
@@ -988,6 +1093,8 @@ export const listActivityLogs = async () => {
 
 export const createRepository = async (input: CreateRepositoryInput) => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase);
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
   const name = input.name.trim();
   const description = input.description.trim();
 
@@ -1015,17 +1122,18 @@ ${description || 'Describe your project here.'}
       slug,
       description,
       visibility: input.visibility,
+      ...(hasToolListColumn ? { show_in_tool_list: false } : {}),
       readme_md: defaultReadme,
     })
-    .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+    .select(repositorySelectColumns as any)
     .single();
 
-  if (error) {
-    if (error.code === '23505') {
+  if (error || !data) {
+    if (error?.code === '23505') {
       throw new Error('Repository with this name already exists.');
     }
 
-    throw new Error(error.message);
+    throw new Error(error?.message || 'Failed to create repository.');
   }
 
   if (defaultReadme) {
@@ -1070,7 +1178,7 @@ ${description || 'Describe your project here.'}
     },
   });
 
-  return data as HubRepository;
+  return mapRepositoryRecord(data);
 };
 
 export const updateRepositoryVisibility = async ({
@@ -1081,13 +1189,16 @@ export const updateRepositoryVisibility = async ({
   visibility: RepositoryVisibility;
 }) => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase);
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
   const { data, error } = await supabase
     .from('repositories')
     .update({
       visibility,
+      ...(hasToolListColumn && visibility === 'private' ? { show_in_tool_list: false } : {}),
     })
     .eq('id', repoId)
-    .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+    .select(repositorySelectColumns as any)
     .single();
 
   if (error) {
@@ -1104,7 +1215,65 @@ export const updateRepositoryVisibility = async ({
     },
   });
 
-  return data as HubRepository;
+  return mapRepositoryRecord(data);
+};
+
+export const updateRepositoryToolListVisibility = async ({
+  repoId,
+  showInToolList,
+}: {
+  repoId: string;
+  showInToolList: boolean;
+}) => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase, true);
+  if (!hasToolListColumn) {
+    throw new Error('Public tool list publishing is unavailable until the show_in_tool_list migration is applied.');
+  }
+
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
+  const { data: existingRepository, error: existingRepositoryError } = await supabase
+    .from('repositories')
+    .select('id, owner_id, name, visibility, show_in_tool_list' as any)
+    .eq('id', repoId)
+    .single();
+
+  if (existingRepositoryError) {
+    throw new Error(existingRepositoryError.message);
+  }
+
+  if (existingRepository.owner_id !== user.id) {
+    throw new Error('Only repository owners can publish to the public tool list.');
+  }
+
+  if (showInToolList && existingRepository.visibility !== 'public') {
+    throw new Error('Make the repository public before publishing it to the public tool list.');
+  }
+
+  const { data, error } = await supabase
+    .from('repositories')
+    .update({
+      show_in_tool_list: showInToolList,
+    })
+    .eq('id', repoId)
+    .select(repositorySelectColumns as any)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await pushActivity({
+    userId: user.id,
+    email: user.email || '',
+    activityType: showInToolList ? 'repo_published_to_tool_list' : 'repo_unpublished_from_tool_list',
+    context: {
+      repo_id: repoId,
+      show_in_tool_list: showInToolList,
+    },
+  });
+
+  return mapRepositoryRecord(data);
 };
 
 export const setRepositoryArchiveState = async ({
@@ -1115,6 +1284,8 @@ export const setRepositoryArchiveState = async ({
   archive: boolean;
 }) => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase);
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
   const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
@@ -1152,9 +1323,10 @@ export const setRepositoryArchiveState = async ({
     .from('repositories')
     .update({
       archived_at: archive ? new Date().toISOString() : null,
+      ...(hasToolListColumn && archive ? { show_in_tool_list: false } : {}),
     })
     .eq('id', repoId)
-    .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+    .select(repositorySelectColumns as any)
     .single();
 
   if (error) {
@@ -1170,7 +1342,7 @@ export const setRepositoryArchiveState = async ({
     },
   });
 
-  return data as HubRepository;
+  return mapRepositoryRecord(data);
 };
 
 export const deleteRepository = async (repoId: string) => {
@@ -1269,6 +1441,67 @@ export const listRepositoryCommits = async (repoId: string) => {
   }
 
   return (data || []) as HubRepositoryCommit[];
+};
+
+export const downloadRepositoryAsZip = async ({
+  repoId,
+  repoSlug,
+}: {
+  repoId: string;
+  repoSlug: string;
+}) => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('repo_files')
+    .select('path, language, content')
+    .eq('repo_id', repoId)
+    .order('path', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error('No files found in this repository.');
+  }
+
+  const zip = new JSZip();
+  for (const file of data) {
+    const filePath = normalizeZipFilePath(file.path || '');
+    if (!filePath) {
+      continue;
+    }
+
+    const content = file.content || '';
+    if ((file.language || '').startsWith('binary:')) {
+      if (content.startsWith('data:')) {
+        zip.file(filePath, decodeDataUrlToBytes(content));
+      } else {
+        zip.file(filePath, new TextEncoder().encode(content));
+      }
+      continue;
+    }
+
+    zip.file(filePath, content);
+  }
+
+  const zipBlob = await zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: {
+      level: 6,
+    },
+  });
+
+  const safeSlug = normalizeRepoSlug(repoSlug) || 'repository';
+  const downloadUrl = URL.createObjectURL(zipBlob);
+  const anchor = document.createElement('a');
+  anchor.href = downloadUrl;
+  anchor.download = `${safeSlug}.zip`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(downloadUrl);
 };
 
 export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: UploadRepositoryFilesInput) => {
