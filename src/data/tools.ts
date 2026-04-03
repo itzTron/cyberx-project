@@ -1,15 +1,11 @@
-import { 
-  Radar, 
-  Shield, 
-  FileX2, 
-  MessageSquareLock, 
-  Bug, 
-  KeyRound, 
-  ClipboardCheck, 
-  Image, 
-  Globe, 
-  HardDrive 
-} from 'lucide-react';
+import { Image, Radar, Shield } from 'lucide-react';
+
+export interface ToolDownloadMeta {
+  cliInstallCommand: string;
+  cliRunCommand: string;
+  githubRepoUrl: string;
+  zipDownloadUrl: string;
+}
 
 export interface Tool {
   slug: string;
@@ -23,178 +19,132 @@ export interface Tool {
   impact: string;
   features: string[];
   futureEnhancements: string[];
+  downloads: ToolDownloadMeta;
 }
 
 export const tools: Tool[] = [
   {
-    slug: 'cyberx-security-suite',
-    name: 'CyberX Security Suite',
-    shortDescription: 'Comprehensive security toolkit with encryption, tracking, and password management',
-    description: 'The complete CyberX security suite featuring advanced encryption, access tracking, integrity verification, password vault, and self-contained local storage for maximum security and privacy.',
+    slug: 'cyberx',
+    name: 'CyberX',
+    shortDescription: 'Unified toolkit for scanning, analysis, encryption, and incident workflows',
+    description:
+      'CyberX is the core multi-tool security package for Cyberspace-X 2.0, combining network checks, threat analysis, encryption helpers, and operational workflow utilities in one CLI-first toolkit.',
     icon: Shield,
     category: 'Security Suite',
     priority: 'High',
     complexity: 'Advanced',
-    impact: 'Essential for comprehensive security protection',
+    impact: 'Primary toolkit for day-to-day security operations',
     features: [
-      'AES-256 Encryption',
-      'Access Tracking',
-      'Integrity Checks',
-      'Password Vault',
-      'Self-Contained'
+      'Multi-tool CLI workflow',
+      'Security automation helpers',
+      'Report-friendly output formats',
+      'Encryption and integrity helpers',
+      'Modular command architecture',
     ],
     futureEnhancements: [
-      'Multi-platform support',
-      'Cloud backup integration',
-      'Advanced threat detection'
-    ]
+      'Plugin marketplace support',
+      'Automated threat response recipes',
+      'Cross-platform desktop launcher',
+    ],
+    downloads: {
+      cliInstallCommand: 'pip install cyberx-toolkit',
+      cliRunCommand: 'cyberx --help',
+      githubRepoUrl: 'https://github.com/itzTron/CyberX',
+      zipDownloadUrl: '/downloads/cyberx-latest.zip',
+    },
   },
   {
     slug: 'network-security-scanner',
     name: 'Network Security Scanner',
-    shortDescription: 'Comprehensive network analysis and vulnerability detection',
-    description: 'A powerful network analysis tool that performs port scanning, vulnerability detection, service fingerprinting, and network mapping to identify potential security weaknesses in your infrastructure.',
+    shortDescription: 'Host discovery, port intelligence, and vulnerability-focused network mapping',
+    description:
+      'Network Security Scanner maps reachable hosts, fingerprints exposed services, and highlights vulnerable surfaces so teams can prioritize patching and hardening across internal and external assets.',
     icon: Radar,
     category: 'Network Security',
     priority: 'High',
     complexity: 'Advanced',
-    impact: 'Critical for identifying network vulnerabilities',
+    impact: 'Critical for attack-surface visibility',
     features: [
-      'Port Scanner',
-      'Vulnerability Detection',
-      'Service Fingerprinting',
-      'Network Mapping',
-      'Banner Grabbing',
-      'OS Detection'
+      'Host and port discovery',
+      'Service fingerprinting',
+      'Protocol-aware probing',
+      'Vulnerability hint detection',
+      'Scan report export',
     ],
     futureEnhancements: [
-      'Real-time scanning dashboard',
-      'Automated remediation suggestions',
-      'Integration with SIEM systems'
-    ]
+      'Scheduled scan automation',
+      'Delta scan comparisons',
+      'CMDB asset sync integrations',
+    ],
+    downloads: {
+      cliInstallCommand: 'pip install network-security-scanner',
+      cliRunCommand: 'nsscan --target 192.168.1.0/24',
+      githubRepoUrl: 'https://github.com/itzTron/network-security-scanner',
+      zipDownloadUrl: '/downloads/network-security-scanner-latest.zip',
+    },
   },
   {
     slug: 'intrusion-detection-system',
     name: 'Intrusion Detection System',
-    shortDescription: 'Real-time monitoring with ML-based anomaly detection',
-    description: 'Advanced intrusion detection system featuring real-time network monitoring, machine learning-based anomaly detection, customizable alert systems, and honeypot integration for comprehensive threat detection.',
+    shortDescription: 'Continuous telemetry monitoring with anomaly and signature detection layers',
+    description:
+      'Intrusion Detection System monitors network activity in real time, correlates signature and behavior anomalies, and surfaces actionable alerts for suspicious lateral movement, beaconing, and policy violations.',
     icon: Shield,
     category: 'Threat Detection',
     priority: 'High',
     complexity: 'Advanced',
-    impact: 'Essential for real-time threat monitoring',
+    impact: 'Essential for rapid detection and triage',
     features: [
-      'Real-time Monitoring',
-      'ML-based Anomaly Detection',
-      'Email/SMS Alerts',
-      'Honeypot Integration',
-      'Traffic Analysis',
-      'Pattern Recognition'
+      'Real-time packet and flow analysis',
+      'Signature and anomaly detection',
+      'Alert severity scoring',
+      'SOC-ready event timelines',
+      'Custom rule tuning',
     ],
     futureEnhancements: [
-      'Deep learning models for zero-day detection',
-      'Automated incident response',
-      'Cloud-based threat intelligence'
-    ]
-  },
-  {
-    slug: 'secure-file-shredder',
-    name: 'Secure File Shredder',
-    shortDescription: 'Military-grade file deletion with multiple methods',
-    description: 'Securely delete sensitive files using military-grade algorithms including DoD 5220.22-M (7-pass) and Gutmann Method (35-pass), with additional features for free space wiping and scheduled shredding.',
-    icon: FileX2,
-    category: 'Data Security',
-    priority: 'High',
-    complexity: 'Intermediate',
-    impact: 'Critical for data privacy compliance',
-    features: [
-      'DoD 5220.22-M (7-pass)',
-      'Gutmann Method (35-pass)',
-      'Free Space Wiping',
-      'Scheduled Shredding',
-      'Verification Reports',
-      'Batch Processing'
+      'Built-in SOAR connectors',
+      'Zero-day behavior model updates',
+      'Threat intel feed correlation',
     ],
-    futureEnhancements: [
-      'SSD-optimized secure deletion',
-      'Cloud storage integration',
-      'Compliance reporting'
-    ]
-  },
-  {
-    slug: 'security-audit-reporting',
-    name: 'Security Audit & Reporting',
-    shortDescription: 'Compliance checks and automated security reports',
-    description: 'Comprehensive security auditing tool that performs system audits, compliance checks for GDPR, HIPAA, and PCI-DSS standards, generates PDF reports, and provides risk scoring.',
-    icon: ClipboardCheck,
-    category: 'Compliance',
-    priority: 'High',
-    complexity: 'Intermediate',
-    impact: 'Essential for regulatory compliance',
-    features: [
-      'System Audit',
-      'GDPR Compliance',
-      'HIPAA Compliance',
-      'PCI-DSS Compliance',
-      'PDF Report Generation',
-      'Risk Scoring'
-    ],
-    futureEnhancements: [
-      'Continuous monitoring',
-      'Custom compliance frameworks',
-      'Integration with ticketing systems'
-    ]
+    downloads: {
+      cliInstallCommand: 'pip install intrusion-detection-system',
+      cliRunCommand: 'ids-monitor --interface eth0',
+      githubRepoUrl: 'https://github.com/itzTron/intrusion-detection-system',
+      zipDownloadUrl: '/downloads/intrusion-detection-system-latest.zip',
+    },
   },
   {
     slug: 'steganography-tool',
     name: 'Steganography Tool',
-    shortDescription: 'Hide and detect data in images and audio files',
-    description: 'Advanced steganography tool for hiding data within images and audio files, detecting hidden content, and combining encryption with steganography for maximum security.',
+    shortDescription: 'Conceal, extract, and validate hidden payloads in media files',
+    description:
+      'Steganography Tool supports secure payload hiding and extraction for images and audio, with integrity checks and optional encryption overlays to protect sensitive transfers in constrained environments.',
     icon: Image,
     category: 'Data Concealment',
     priority: 'Medium',
     complexity: 'Intermediate',
-    impact: 'Useful for covert data transfer',
+    impact: 'Useful for covert and tamper-aware data exchange',
     features: [
-      'Image Steganography',
-      'Audio Steganography',
-      'Hidden Data Detection',
-      'Encryption + Stego Combo',
-      'Capacity Analysis',
-      'Multiple Algorithms'
+      'Image and audio payload embedding',
+      'Secret extraction with validation',
+      'Optional encrypted payload mode',
+      'Capacity estimation checks',
+      'Forensic detection aids',
     ],
     futureEnhancements: [
-      'Video steganography',
-      'AI-based detection bypass',
-      'Batch processing'
-    ]
+      'Video container support',
+      'Batch pipeline mode',
+      'Adaptive anti-detection strategy presets',
+    ],
+    downloads: {
+      cliInstallCommand: 'pip install steganography-tool',
+      cliRunCommand: 'stego hide --input image.png --secret secret.txt',
+      githubRepoUrl: 'https://github.com/itzTron/steganography-tool',
+      zipDownloadUrl: '/downloads/steganography-tool-latest.zip',
+    },
   },
-  {
-    slug: 'encrypted-backup-system',
-    name: 'Encrypted Backup System',
-    shortDescription: 'Secure incremental backups with cloud integration',
-    description: 'Enterprise-grade encrypted backup system featuring incremental backups, cloud integration with AWS S3, Google Drive, and Dropbox, versioning, and deduplication for efficient storage.',
-    icon: HardDrive,
-    category: 'Data Protection',
-    priority: 'High',
-    complexity: 'Intermediate',
-    impact: 'Essential for disaster recovery',
-    features: [
-      'Incremental Backups',
-      'AWS S3 Integration',
-      'Google Drive Integration',
-      'Dropbox Integration',
-      'Versioning',
-      'Deduplication'
-    ],
-    futureEnhancements: [
-      'Point-in-time recovery',
-      'Ransomware protection',
-      'Cross-region replication'
-    ]
-  }
 ];
 
 export const getToolBySlug = (slug: string): Tool | undefined => {
-  return tools.find(tool => tool.slug === slug);
+  return tools.find((tool) => tool.slug === slug);
 };

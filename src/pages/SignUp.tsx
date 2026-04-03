@@ -112,13 +112,13 @@ const SignUp = () => {
               </span>
               <h1 className="text-4xl md:text-6xl font-bold mb-6">
                 <span className="text-foreground">Create your </span>
-                <span className="text-primary neon-text">CyberX</span>
+                <span className="text-primary neon-text">Cyberspace-X 2.0</span>
                 <br />
                 <span className="text-foreground">account</span>
               </h1>
               <p className="text-lg text-muted-foreground max-w-xl">
                 Set up your account to organize assessments, download releases,
-                and start using the CyberX platform from one secure entry point.
+                and start using the Cyberspace-X 2.0 platform from one secure entry point.
               </p>
 
               <div className="mt-8 space-y-4 max-w-md">

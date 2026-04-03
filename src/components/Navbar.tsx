@@ -13,7 +13,6 @@ const navLinks = [
   { href: '/features', label: 'Features' },
   { href: '/tools', label: 'Tools' },
   { href: '/dashboard', label: 'Hub' },
-  { href: '/roadmap', label: 'Roadmap' },
   { href: '/download', label: 'Download' },
   { href: '/docs', label: 'Docs' },
   { href: '/contact', label: 'Contact' },
@@ -25,7 +24,6 @@ const reservedTopLevelRoutes = new Set([
   'dashboard',
   'profile',
   'activity',
-  'roadmap',
   'download',
   'docs',
   'contact',
@@ -139,7 +137,7 @@ const Navbar = () => {
           <Link to="/" className="flex items-center gap-2 group">
             <img 
               src="/cyberx.png" 
-              alt="CyberX Logo" 
+              alt="Cyberspace-X 2.0 Logo" 
               className="h-20 w-auto transition-all duration-300 group-hover:drop-shadow-[0_0_10px_hsl(135,100%,45%)]" 
             />
             <span className="text-xl font-bold font-mono text-foreground group-hover:text-primary transition-colors">

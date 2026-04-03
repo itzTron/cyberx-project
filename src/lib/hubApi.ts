@@ -364,7 +364,7 @@ const ensureProfileRow = async ({
 };
 
 const buildDefaultProfileReadme = (fullName: string) => {
-  const title = fullName || 'CyberX Developer';
+  const title = fullName || 'Cyberspace-X 2.0 Developer';
   return `# ${title}
 
 ## About
@@ -665,7 +665,7 @@ const ensureDefaultProfileRepository = async ({
 
 export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
   const { supabase, user } = await ensureAuthenticatedUser();
-  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
     email: user.email || '',
@@ -745,7 +745,7 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
 
 export const getCurrentUserUsername = async () => {
   const { user } = await ensureAuthenticatedUser();
-  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
     email: user.email || '',
@@ -757,7 +757,7 @@ export const getCurrentUserUsername = async () => {
 
 export const getCurrentUserProfile = async (): Promise<HubUserProfile> => {
   const { user } = await ensureAuthenticatedUser();
-  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
     email: user.email || '',
@@ -902,7 +902,7 @@ export const updateProfileReadme = async (profileReadme: string) => {
   }
 
   const fallbackUsername = buildUsernameCandidate({
-    fullName: data.full_name || (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer',
+    fullName: data.full_name || (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer',
     email: user.email || '',
     userId: user.id,
   });
@@ -946,6 +946,21 @@ export const listRepositories = async () => {
     .from('repositories')
     .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
     .eq('owner_id', user.id)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || []) as HubRepository[];
+};
+
+export const listPushableRepositories = async () => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { data, error } = await supabase
+    .from('repositories')
+    .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+    .or(`owner_id.eq.${user.id},visibility.eq.public`)
     .order('updated_at', { ascending: false });
 
   if (error) {
@@ -1100,7 +1115,7 @@ export const setRepositoryArchiveState = async ({
   archive: boolean;
 }) => {
   const { supabase, user } = await ensureAuthenticatedUser();
-  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
     email: user.email || '',
@@ -1160,7 +1175,7 @@ export const setRepositoryArchiveState = async ({
 
 export const deleteRepository = async (repoId: string) => {
   const { supabase, user } = await ensureAuthenticatedUser();
-  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
     email: user.email || '',
@@ -1259,6 +1274,26 @@ export const listRepositoryCommits = async (repoId: string) => {
 export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: UploadRepositoryFilesInput) => {
   const { supabase, user } = await ensureAuthenticatedUser();
 
+  const { data: targetRepository, error: targetRepositoryError } = await supabase
+    .from('repositories')
+    .select('id, owner_id, name, slug, visibility')
+    .eq('id', repoId)
+    .maybeSingle();
+
+  if (targetRepositoryError) {
+    throw new Error(targetRepositoryError.message);
+  }
+
+  if (!targetRepository) {
+    throw new Error('Repository not found or you do not have access.');
+  }
+
+  const isRepoOwner = targetRepository.owner_id === user.id;
+  const isPublicRepository = targetRepository.visibility === 'public';
+  if (!isRepoOwner && !isPublicRepository) {
+    throw new Error('You can only push to your own repositories or public repositories.');
+  }
+
   if (!files.length) {
     throw new Error('Select at least one file to upload.');
   }
@@ -1328,33 +1363,51 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
     throw new Error(commitError.message);
   }
 
-  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
-  const profile = await ensureProfileRow({
-    userId: user.id,
-    email: user.email || '',
-    fullName,
-  });
-  const resolvedUsername = (profile.username as string | null) || buildUsernameCandidate({
-    fullName: profile.full_name || fullName,
-    email: user.email || '',
-    userId: user.id,
-  });
-  const profileFilePath = getProfileRepositoryFilePath(resolvedUsername, user.id);
-  const normalizedProfileFilePath = normalizeRepositoryPath(profileFilePath);
-  const profileFileRecord = records.find((record) => normalizeRepositoryPath(record.path) === normalizedProfileFilePath);
+  let resolvedUsername = '';
+  let profileFileRecord: typeof records[number] | undefined;
+  if (isRepoOwner) {
+    const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
+    const profile = await ensureProfileRow({
+      userId: user.id,
+      email: user.email || '',
+      fullName,
+    });
+    resolvedUsername = (profile.username as string | null) || buildUsernameCandidate({
+      fullName: profile.full_name || fullName,
+      email: user.email || '',
+      userId: user.id,
+    });
+    const profileFilePath = getProfileRepositoryFilePath(resolvedUsername, user.id);
+    const normalizedProfileFilePath = normalizeRepositoryPath(profileFilePath);
+    profileFileRecord = records.find((record) => normalizeRepositoryPath(record.path) === normalizedProfileFilePath);
+  }
+
   const readmeRecord = records.find((record) => record.path.toLowerCase() === 'readme.md');
   const dashboardProfileContent = profileFileRecord?.content || readmeRecord?.content || '';
 
-  if (dashboardProfileContent) {
-    await supabase
+  if (isRepoOwner && dashboardProfileContent) {
+    const { error: repoReadmeUpdateError } = await supabase
       .from('repositories')
       .update({
         readme_md: dashboardProfileContent,
       })
       .eq('id', repoId);
+
+    if (repoReadmeUpdateError) {
+      throw new Error(repoReadmeUpdateError.message);
+    }
   }
 
-  if (profileFileRecord) {
+  if (
+    isRepoOwner &&
+    profileFileRecord &&
+    isProfileRepositoryForUser({
+      repoName: targetRepository.name,
+      repoSlug: targetRepository.slug,
+      username: resolvedUsername,
+      userId: user.id,
+    })
+  ) {
     const { error: profileUpdateError } = await supabase
       .from('user_profiles')
       .update({
@@ -1388,3 +1441,4 @@ export const signOutDashboardUser = async () => {
     throw new Error(error.message);
   }
 };
+

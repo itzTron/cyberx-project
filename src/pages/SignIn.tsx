@@ -102,7 +102,7 @@ const SignIn = () => {
               </span>
               <h1 className="text-4xl md:text-6xl font-bold mb-6">
                 <span className="text-foreground">Access your </span>
-                <span className="text-primary neon-text">CyberX</span>
+                <span className="text-primary neon-text">Cyberspace-X 2.0</span>
                 <br />
                 <span className="text-foreground">workspace</span>
               </h1>

@@ -52,11 +52,11 @@ const Docs = () => {
               DOCUMENTATION
             </span>
             <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              <span className="text-foreground">CyberX </span>
+              <span className="text-foreground">Cyberspace-X 2.0 </span>
               <span className="text-primary neon-text">Docs</span>
             </h1>
             <p className="text-xl text-muted-foreground">
-              Learn how to install, configure, and use CyberX effectively.
+              Learn how to install, configure, and use the CyberX toolkit effectively on Cyberspace-X 2.0.
             </p>
           </motion.div>
         </div>
@@ -123,7 +123,7 @@ python setup.py install`}</code>
               <GlassCard>
                 <h2 className="text-2xl font-bold text-foreground mb-4">Contributing</h2>
                 <p className="text-muted-foreground mb-4">
-                  CyberX is open source and welcomes contributions! Here's how you can help:
+                  Cyberspace-X 2.0 is open source and welcomes contributions! Here's how you can help:
                 </p>
                 <ul className="space-y-2 text-muted-foreground">
                   <li className="flex items-start gap-2">

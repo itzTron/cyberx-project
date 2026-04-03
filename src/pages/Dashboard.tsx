@@ -45,6 +45,7 @@ import {
   getDashboardBootstrap,
   getRepositoryFileContent,
   listActivityLogs,
+  listPushableRepositories,
   listRepositories,
   listRepositoryCommits,
   listRepositoryFiles,
@@ -200,6 +201,7 @@ const Dashboard = () => {
   const [bootstrapError, setBootstrapError] = useState('');
   const [user, setUser] = useState<DashboardBootstrap['user'] | null>(null);
   const [repositories, setRepositories] = useState<HubRepository[]>([]);
+  const [pushableRepositories, setPushableRepositories] = useState<HubRepository[]>([]);
   const [activityLogs, setActivityLogs] = useState<HubActivityLog[]>([]);
   const [profileReadmeDraft, setProfileReadmeDraft] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -262,17 +264,22 @@ const Dashboard = () => {
   };
 
   const refreshRepositories = async () => {
-    const repos = await listRepositories();
+    const [repos, pushableRepos] = await Promise.all([listRepositories(), listPushableRepositories()]);
     setRepositories(repos);
+    setPushableRepositories(pushableRepos);
 
     if (!repos.length) {
       setSelectedRepoId('');
+    } else {
+      setSelectedRepoId((current) => (repos.some((repo) => repo.id === current) ? current : repos[0].id));
+    }
+
+    if (!pushableRepos.length) {
       setUploadRepoId('');
       return repos;
     }
 
-    setSelectedRepoId((current) => (repos.some((repo) => repo.id === current) ? current : repos[0].id));
-    setUploadRepoId((current) => (repos.some((repo) => repo.id === current) ? current : repos[0].id));
+    setUploadRepoId((current) => (pushableRepos.some((repo) => repo.id === current) ? current : pushableRepos[0].id));
     return repos;
   };
 
@@ -350,14 +357,19 @@ const Dashboard = () => {
 
       try {
         const data = await getDashboardBootstrap();
+        const pushableRepos = await listPushableRepositories();
         setUser(data.user);
         setRepositories(data.repositories);
+        setPushableRepositories(pushableRepos);
         setActivityLogs(data.activityLogs);
         setProfileReadmeDraft(data.profileReadme);
 
         if (data.repositories.length > 0) {
           setSelectedRepoId(data.repositories[0].id);
-          setUploadRepoId(data.repositories[0].id);
+        }
+
+        if (pushableRepos.length > 0) {
+          setUploadRepoId(pushableRepos[0].id);
         }
 
         const normalizedRouteUsername = (routeUsername || '').toLowerCase();
@@ -745,7 +757,7 @@ const Dashboard = () => {
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <h1 className="text-3xl md:text-4xl font-bold text-foreground">CyberX Hub</h1>
+                <h1 className="text-3xl md:text-4xl font-bold text-foreground">Cyberspace-X 2.0 Hub</h1>
                 <p className="text-muted-foreground mt-2">
                   GitHub-style workspace for repositories, code uploads, commits, and Markdown profile docs.
                 </p>
@@ -1151,9 +1163,9 @@ const Dashboard = () => {
                               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                             >
                               <option value="">Select repository</option>
-                              {repositories.map((repo) => (
+                              {pushableRepositories.map((repo) => (
                                 <option key={repo.id} value={repo.id}>
-                                  {repo.name}
+                                  {repo.name} ({repo.visibility})
                                 </option>
                               ))}
                             </select>
@@ -1372,7 +1384,7 @@ const Dashboard = () => {
                       Included fundamentals: repository creation, visibility controls, code upload, code viewer, commit log,
                       and profile Markdown.
                     </p>
-                    <p>RLS is enabled so users can only write to their own repositories.</p>
+                    <p>RLS is enabled so repository owners control settings, while authenticated users can contribute to public repositories.</p>
                   </CardContent>
                 </Card>
 

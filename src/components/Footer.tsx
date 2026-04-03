@@ -13,7 +13,7 @@ const Footer = () => {
                 <Shield className="w-8 h-8 text-primary" />
                 <Terminal className="w-4 h-4 text-primary absolute -bottom-1 -right-1" />
               </div>
-              <span className="text-xl font-bold font-mono">CyberX</span>
+              <span className="text-xl font-bold font-mono">Cyberspace-X 2.0</span>
             </Link>
             <p className="text-muted-foreground text-sm max-w-md">
               Advanced cybersecurity toolkit designed for security professionals, 
@@ -92,7 +92,7 @@ const Footer = () => {
 
         <div className="border-t border-border mt-8 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-muted-foreground text-sm">
-            © 2025 CyberX. Built for security research and education.
+            © 2025 Cyberspace-X 2.0. Built for security research and education.
           </p>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse" />
@@ -105,3 +105,4 @@ const Footer = () => {
 };
 
 export default Footer;
+
