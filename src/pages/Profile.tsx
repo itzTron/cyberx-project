@@ -1,12 +1,22 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, LoaderCircle, Mail, Save } from 'lucide-react';
+import { Camera, LoaderCircle, Mail, Save, Trash2 } from 'lucide-react';
+import Cropper, { type Area } from 'react-easy-crop';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import {
   getCurrentUserProfile,
@@ -33,6 +43,49 @@ const readFileAsDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const readBlobAsDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error('Unable to read image blob.'));
+    reader.readAsDataURL(blob);
+  });
+
+const loadImage = (url: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Unable to load image.'));
+    image.src = url;
+  });
+
+const createCroppedAvatarDataUrl = async (imageUrl: string, pixelCrop: Area) => {
+  const image = await loadImage(imageUrl);
+  const cropSize = Math.max(1, Math.round(Math.min(pixelCrop.width, pixelCrop.height)));
+  const sourceX = Math.round(pixelCrop.x + (pixelCrop.width - cropSize) / 2);
+  const sourceY = Math.round(pixelCrop.y + (pixelCrop.height - cropSize) / 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = cropSize;
+  canvas.height = cropSize;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Unable to initialize canvas for avatar crop.');
+  }
+
+  context.clearRect(0, 0, cropSize, cropSize);
+  context.save();
+  context.beginPath();
+  context.arc(cropSize / 2, cropSize / 2, cropSize / 2, 0, Math.PI * 2);
+  context.closePath();
+  context.clip();
+  context.drawImage(image, sourceX, sourceY, cropSize, cropSize, 0, 0, cropSize, cropSize);
+  context.restore();
+
+  return canvas.toDataURL('image/png');
+};
+
 const Profile = () => {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [accessError, setAccessError] = useState('');
@@ -41,11 +94,20 @@ const Profile = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [savedAvatarUrl, setSavedAvatarUrl] = useState('');
   const [email, setEmail] = useState('');
   const [profileStatus, setProfileStatus] = useState('');
   const [emailStatus, setEmailStatus] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
+  const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
+  const [cropSourceImage, setCropSourceImage] = useState('');
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [isApplyingCrop, setIsApplyingCrop] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
+  const hasAvatarChanges = avatarUrl.trim() !== savedAvatarUrl.trim();
 
   const syncForm = (data: HubUserProfile) => {
     setProfile(data);
@@ -53,6 +115,7 @@ const Profile = () => {
     setPhoneNumber(data.phoneNumber);
     setBio(data.bio);
     setAvatarUrl(data.avatarUrl);
+    setSavedAvatarUrl(data.avatarUrl);
     setEmail(data.email);
   };
 
@@ -75,6 +138,35 @@ const Profile = () => {
     void bootstrap();
   }, []);
 
+  const openCropDialogForImage = async (sourceImage: string) => {
+    if (!sourceImage.trim()) {
+      setProfileStatus('Select an image first.');
+      return;
+    }
+
+    try {
+      const normalizedImage = sourceImage.startsWith('data:')
+        ? sourceImage
+        : await fetch(sourceImage)
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error('Unable to fetch image for cropping.');
+              }
+              return response.blob();
+            })
+            .then((blob) => readBlobAsDataUrl(blob));
+
+      setCropSourceImage(normalizedImage);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+      setCroppedAreaPixels(null);
+      setIsCropDialogOpen(true);
+      setProfileStatus('Adjust avatar crop and apply. Save profile to keep the change.');
+    } catch {
+      setProfileStatus('Unable to open crop editor. Re-upload the image to crop it.');
+    }
+  };
+
   const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -93,11 +185,44 @@ const Profile = () => {
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      setAvatarUrl(dataUrl);
-      setProfileStatus('Avatar selected. Save profile to apply changes.');
+      await openCropDialogForImage(dataUrl);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to process avatar.';
       setProfileStatus(message);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const triggerAvatarFilePicker = () => {
+    avatarFileInputRef.current?.click();
+  };
+
+  const handleAvatarDelete = () => {
+    setAvatarUrl('');
+    setProfileStatus('Avatar removed. Save profile to apply changes.');
+  };
+
+  const handleAvatarCropEdit = async () => {
+    await openCropDialogForImage(avatarUrl);
+  };
+
+  const handleApplyCrop = async () => {
+    if (!cropSourceImage || !croppedAreaPixels) {
+      setProfileStatus('Adjust the crop area before applying.');
+      return;
+    }
+
+    setIsApplyingCrop(true);
+    try {
+      const croppedAvatar = await createCroppedAvatarDataUrl(cropSourceImage, croppedAreaPixels);
+      setAvatarUrl(croppedAvatar);
+      setIsCropDialogOpen(false);
+      setProfileStatus('Avatar crop updated. Save profile to apply changes.');
+    } catch {
+      setProfileStatus('Unable to apply avatar crop. Try again.');
+    } finally {
+      setIsApplyingCrop(false);
     }
   };
 
@@ -173,28 +298,123 @@ const Profile = () => {
           {!isBootstrapping && !accessError && profile && (
             <>
               <Card>
-                <CardContent className="pt-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-center gap-4">
-                    <Avatar className="h-14 w-14 border border-border">
-                      <AvatarImage src={avatarUrl || undefined} alt={fullName} />
-                      <AvatarFallback>{getInitials(fullName || profile.username)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="text-lg font-semibold text-foreground">{fullName || profile.username}</p>
-                      <p className="text-sm text-muted-foreground">@{profile.username}</p>
-                      <p className="text-sm text-muted-foreground">{email}</p>
+                <CardHeader>
+                  <CardTitle>Profile Picture Preview</CardTitle>
+                  <CardDescription>Preview, crop, upload, or remove your avatar before saving profile changes.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-20 w-20 border border-border">
+                          <AvatarImage src={avatarUrl || undefined} alt={fullName || profile.username} />
+                          <AvatarFallback>{getInitials(fullName || profile.username)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Current avatar preview</p>
+                          <p className="text-xs text-muted-foreground">
+                            {avatarUrl ? 'Image selected' : 'No avatar selected'}
+                          </p>
+                          {hasAvatarChanges && <p className="text-xs text-primary mt-1">Unsaved avatar changes</p>}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" onClick={triggerAvatarFilePicker}>
+                          <Camera className="h-4 w-4 mr-2" />
+                          Upload
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void handleAvatarCropEdit()}
+                          disabled={!avatarUrl}
+                        >
+                          Edit
+                        </Button>
+                        <Button type="button" variant="outline" onClick={handleAvatarDelete} disabled={!avatarUrl}>
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </Button>
+                      </div>
                     </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      Upload an image, then use <span className="font-medium text-foreground">Edit</span> to open a
+                      large crop window with a circular avatar guide.
+                    </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" asChild>
-                      <Link to={`/${profile.username}`}>Public Profile</Link>
-                    </Button>
-                    <Button variant="outline" asChild>
-                      <Link to="/dashboard">Dashboard</Link>
-                    </Button>
-                  </div>
+
+                  <Input
+                    id="profile-avatar-upload"
+                    ref={avatarFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => void handleAvatarUpload(event)}
+                    className="hidden"
+                  />
                 </CardContent>
               </Card>
+
+              <Dialog open={isCropDialogOpen} onOpenChange={setIsCropDialogOpen}>
+                <DialogContent className="max-w-5xl p-0">
+                  <DialogHeader className="px-6 pt-6">
+                    <DialogTitle>Crop Profile Picture</DialogTitle>
+                    <DialogDescription>
+                      Move and zoom your image inside the circular frame to position your avatar.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="px-6 pb-6 space-y-4">
+                    <div className="relative h-[50vh] min-h-[340px] overflow-hidden rounded-md border border-border bg-black/80">
+                      {cropSourceImage && (
+                        <Cropper
+                          image={cropSourceImage}
+                          crop={crop}
+                          zoom={zoom}
+                          aspect={1}
+                          cropShape="round"
+                          showGrid={false}
+                          objectFit="contain"
+                          onCropChange={setCrop}
+                          onZoomChange={setZoom}
+                          onCropComplete={(_, pixels) => setCroppedAreaPixels(pixels)}
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm text-foreground">
+                        <span>Zoom</span>
+                        <span>{zoom.toFixed(2)}x</span>
+                      </div>
+                      <Slider
+                        value={[zoom]}
+                        min={1}
+                        max={3}
+                        step={0.05}
+                        onValueChange={(values) => setZoom(values[0] ?? 1)}
+                      />
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setIsCropDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="button" onClick={() => void handleApplyCrop()} disabled={isApplyingCrop}>
+                        {isApplyingCrop ? (
+                          <span className="inline-flex items-center gap-2">
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                            Applying...
+                          </span>
+                        ) : (
+                          'Apply Crop'
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
               <Card>
                 <CardHeader>
@@ -239,32 +459,6 @@ const Profile = () => {
                         onChange={(event) => setBio(event.target.value)}
                         placeholder="Share what you work on."
                         className="min-h-[120px]"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label htmlFor="profile-avatar-url" className="block text-sm text-foreground">
-                        Profile Picture URL
-                      </label>
-                      <Input
-                        id="profile-avatar-url"
-                        value={avatarUrl}
-                        onChange={(event) => setAvatarUrl(event.target.value)}
-                        placeholder="https://example.com/avatar.png"
-                      />
-                      <label
-                        htmlFor="profile-avatar-upload"
-                        className="inline-flex items-center gap-2 text-sm text-primary cursor-pointer hover:underline"
-                      >
-                        <Camera className="h-4 w-4" />
-                        Upload image from device
-                      </label>
-                      <Input
-                        id="profile-avatar-upload"
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => void handleAvatarUpload(event)}
-                        className="hidden"
                       />
                     </div>
 
