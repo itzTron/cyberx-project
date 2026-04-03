@@ -1136,10 +1136,12 @@ ${description || 'Describe your project here.'}
     throw new Error(error?.message || 'Failed to create repository.');
   }
 
+  const repoData = data as any;
+
   if (defaultReadme) {
     const { error: readmeError } = await supabase.from('repo_files').upsert(
       {
-        repo_id: data.id,
+        repo_id: repoData.id,
         path: 'README.md',
         language: 'markdown',
         content: defaultReadme,
@@ -1157,7 +1159,7 @@ ${description || 'Describe your project here.'}
   }
 
   const { error: commitError } = await supabase.from('repo_commits').insert({
-    repo_id: data.id,
+    repo_id: repoData.id,
     author_id: user.id,
     message: 'Initial commit',
     files_changed: defaultReadme ? 1 : 0,
@@ -1172,13 +1174,13 @@ ${description || 'Describe your project here.'}
     email: user.email || '',
     activityType: 'repo_created',
     context: {
-      repo_id: data.id,
-      repo_name: data.name,
-      visibility: data.visibility,
+      repo_id: repoData.id,
+      repo_name: repoData.name,
+      visibility: repoData.visibility,
     },
   });
 
-  return mapRepositoryRecord(data);
+  return mapRepositoryRecord(repoData);
 };
 
 export const updateRepositoryVisibility = async ({
@@ -1232,7 +1234,7 @@ export const updateRepositoryToolListVisibility = async ({
   }
 
   const repositorySelectColumns = await getRepositorySelectColumns(supabase);
-  const { data: existingRepository, error: existingRepositoryError } = await supabase
+  const { data: existingRepositoryRaw, error: existingRepositoryError } = await supabase
     .from('repositories')
     .select('id, owner_id, name, visibility, show_in_tool_list' as any)
     .eq('id', repoId)
@@ -1241,6 +1243,8 @@ export const updateRepositoryToolListVisibility = async ({
   if (existingRepositoryError) {
     throw new Error(existingRepositoryError.message);
   }
+
+  const existingRepository = existingRepositoryRaw as any;
 
   if (existingRepository.owner_id !== user.id) {
     throw new Error('Only repository owners can publish to the public tool list.');
@@ -1297,7 +1301,7 @@ export const setRepositoryArchiveState = async ({
     email: user.email || '',
     userId: user.id,
   });
-  const { data: targetRepository, error: targetRepositoryError } = await supabase
+  const { data: targetRepositoryRaw, error: targetRepositoryError } = await supabase
     .from('repositories')
     .select('id, name, slug')
     .eq('id', repoId)
@@ -1306,6 +1310,8 @@ export const setRepositoryArchiveState = async ({
   if (targetRepositoryError) {
     throw new Error(targetRepositoryError.message);
   }
+
+  const targetRepository = targetRepositoryRaw as any;
 
   if (
     archive &&
@@ -1358,7 +1364,7 @@ export const deleteRepository = async (repoId: string) => {
     email: user.email || '',
     userId: user.id,
   });
-  const { data: repo, error: repoError } = await supabase
+  const { data: repoRaw, error: repoError } = await supabase
     .from('repositories')
     .select('id, name, slug')
     .eq('id', repoId)
@@ -1367,6 +1373,8 @@ export const deleteRepository = async (repoId: string) => {
   if (repoError) {
     throw new Error(repoError.message);
   }
+
+  const repo = repoRaw as any;
 
   if (
     isProfileRepositoryForUser({
@@ -1507,7 +1515,7 @@ export const downloadRepositoryAsZip = async ({
 export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: UploadRepositoryFilesInput) => {
   const { supabase, user } = await ensureAuthenticatedUser();
 
-  const { data: targetRepository, error: targetRepositoryError } = await supabase
+  const { data: targetRepositoryRaw, error: targetRepositoryError } = await supabase
     .from('repositories')
     .select('id, owner_id, name, slug, visibility')
     .eq('id', repoId)
@@ -1517,9 +1525,11 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
     throw new Error(targetRepositoryError.message);
   }
 
-  if (!targetRepository) {
+  if (!targetRepositoryRaw) {
     throw new Error('Repository not found or you do not have access.');
   }
+
+  const targetRepository = targetRepositoryRaw as any;
 
   const isRepoOwner = targetRepository.owner_id === user.id;
   const isPublicRepository = targetRepository.visibility === 'public';
