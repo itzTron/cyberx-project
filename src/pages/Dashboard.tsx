@@ -12,16 +12,16 @@ import {
   FolderGit2,
   GitCommitHorizontal,
   LogOut,
+  Pencil,
   PlusCircle,
   RefreshCw,
   Trash2,
   Upload,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Navbar from '@/components/Navbar';
+import GitHubReadme from '@/components/GitHubReadme';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -83,6 +83,10 @@ const formatBytes = (bytes: number) => {
 };
 
 const getSyntaxLanguage = (language: string) => {
+  if ((language || '').startsWith('binary:')) {
+    return 'text';
+  }
+
   switch (language) {
     case 'typescript':
       return 'tsx';
@@ -96,6 +100,96 @@ const getSyntaxLanguage = (language: string) => {
       return language || 'text';
   }
 };
+
+const getBinaryMimeType = (language: string) => {
+  if (!language.startsWith('binary:')) {
+    return '';
+  }
+
+  return language.slice('binary:'.length);
+};
+
+const isAbsoluteAssetSource = (source: string) => {
+  const value = source.trim().toLowerCase();
+  return (
+    value.startsWith('http://') ||
+    value.startsWith('https://') ||
+    value.startsWith('data:') ||
+    value.startsWith('blob:') ||
+    value.startsWith('#')
+  );
+};
+
+const stripQueryAndHash = (value: string) => value.split('#')[0].split('?')[0];
+
+const normalizeRepoPath = (value: string) => {
+  const parts = value.replace(/\\/g, '/').split('/');
+  const stack: string[] = [];
+  for (const part of parts) {
+    const token = part.trim();
+    if (!token || token === '.') {
+      continue;
+    }
+
+    if (token === '..') {
+      stack.pop();
+      continue;
+    }
+
+    stack.push(token);
+  }
+
+  return stack.join('/');
+};
+
+const getDirectoryPath = (filePath: string) => {
+  const normalized = normalizeRepoPath(filePath);
+  const lastSlashIndex = normalized.lastIndexOf('/');
+  if (lastSlashIndex === -1) {
+    return '';
+  }
+
+  return normalized.slice(0, lastSlashIndex);
+};
+
+const resolveRepoRelativePath = (currentFilePath: string, source: string) => {
+  const cleanSource = stripQueryAndHash(source.trim());
+  if (!cleanSource) {
+    return '';
+  }
+
+  if (cleanSource.startsWith('/')) {
+    return normalizeRepoPath(cleanSource.slice(1));
+  }
+
+  const baseDir = getDirectoryPath(currentFilePath);
+  return normalizeRepoPath(baseDir ? `${baseDir}/${cleanSource}` : cleanSource);
+};
+
+const collectReadmeAssetSources = (markdown: string) => {
+  const sources = new Set<string>();
+  const markdownImageRegex = /!\[[^\]]*]\(([^)\s]+(?:\s+"[^"]*")?)\)/g;
+  const htmlImageRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
+
+  for (const match of markdown.matchAll(markdownImageRegex)) {
+    const rawTarget = (match[1] || '').trim();
+    const cleanedTarget = rawTarget.replace(/^<|>$/g, '').replace(/\s+"[^"]*"$/, '').trim();
+    if (cleanedTarget) {
+      sources.add(cleanedTarget);
+    }
+  }
+
+  for (const match of markdown.matchAll(htmlImageRegex)) {
+    const target = (match[1] || '').trim();
+    if (target) {
+      sources.add(target);
+    }
+  }
+
+  return Array.from(sources);
+};
+
+const getRepoFileCacheKey = (repoId: string, filePath: string) => `${repoId}::${normalizeRepoPath(filePath)}`;
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -116,6 +210,12 @@ const Dashboard = () => {
   const [repositoryCommits, setRepositoryCommits] = useState<HubRepositoryCommit[]>([]);
   const [selectedFilePath, setSelectedFilePath] = useState('');
   const [selectedFileContent, setSelectedFileContent] = useState<HubRepositoryFile | null>(null);
+  const repoFileListCacheRef = useRef<Record<string, HubRepositoryFile[]>>({});
+  const repoFileContentCacheRef = useRef<Record<string, HubRepositoryFile>>({});
+  const [readmeAssetUrls, setReadmeAssetUrls] = useState<Record<string, string>>({});
+  const [isReadmeAssetLoading, setIsReadmeAssetLoading] = useState(false);
+  const [profileReadmeAssetUrls, setProfileReadmeAssetUrls] = useState<Record<string, string>>({});
+  const [isProfileReadmeAssetLoading, setIsProfileReadmeAssetLoading] = useState(false);
   const [repoDataError, setRepoDataError] = useState('');
   const [isRepoDataLoading, setIsRepoDataLoading] = useState(false);
   const [isFileLoading, setIsFileLoading] = useState(false);
@@ -190,6 +290,7 @@ const Dashboard = () => {
       }
 
       setRepositoryFiles(files);
+      repoFileListCacheRef.current[repoId] = files;
       setRepositoryCommits(commits);
 
       const fallbackPath = files.find((file) => file.path.toLowerCase() === 'readme.md')?.path || files[0]?.path || '';
@@ -209,6 +310,7 @@ const Dashboard = () => {
       }
 
       setSelectedFileContent(fileContent);
+      repoFileContentCacheRef.current[getRepoFileCacheKey(repoId, pathToLoad)] = fileContent;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load repository details.';
       setRepoDataError(message);
@@ -232,6 +334,7 @@ const Dashboard = () => {
     try {
       const fileContent = await getRepositoryFileContent(selectedRepoId, filePath);
       setSelectedFileContent(fileContent);
+      repoFileContentCacheRef.current[getRepoFileCacheKey(selectedRepoId, filePath)] = fileContent;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load file content.';
       setRepoDataError(message);
@@ -274,6 +377,10 @@ const Dashboard = () => {
   }, [navigate, routeUsername]);
 
   useEffect(() => {
+    repoFileContentCacheRef.current = {};
+    setReadmeAssetUrls({});
+    setIsReadmeAssetLoading(false);
+
     if (!selectedRepoId) {
       setRepositoryFiles([]);
       setRepositoryCommits([]);
@@ -284,6 +391,182 @@ const Dashboard = () => {
 
     void loadRepositoryDetails(selectedRepoId);
   }, [selectedRepoId]);
+
+  useEffect(() => {
+    const activeFile = selectedFileContent;
+    const activeRepoId = selectedRepoId;
+
+    if (!activeFile || !activeRepoId) {
+      setReadmeAssetUrls({});
+      setIsReadmeAssetLoading(false);
+      return;
+    }
+
+    const isMarkdownFile =
+      !activeFile.language.startsWith('binary:') && activeFile.path.toLowerCase().endsWith('.md');
+
+    if (!isMarkdownFile || !activeFile.content) {
+      setReadmeAssetUrls({});
+      setIsReadmeAssetLoading(false);
+      return;
+    }
+
+    const sources = collectReadmeAssetSources(activeFile.content);
+    if (!sources.length) {
+      setReadmeAssetUrls({});
+      setIsReadmeAssetLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadReadmeAssets = async () => {
+      setIsReadmeAssetLoading(true);
+      const resolvedSources: Record<string, string> = {};
+
+      try {
+        for (const source of sources) {
+          if (isAbsoluteAssetSource(source)) {
+            resolvedSources[source] = source;
+            continue;
+          }
+
+          const repoPath = resolveRepoRelativePath(activeFile.path, source);
+          if (!repoPath) {
+            continue;
+          }
+
+          const matchedFile = repositoryFiles.find((file) => normalizeRepoPath(file.path) === repoPath);
+          if (!matchedFile) {
+            continue;
+          }
+
+          let fileContent = repoFileContentCacheRef.current[getRepoFileCacheKey(activeRepoId, matchedFile.path)];
+          if (!fileContent) {
+            fileContent = await getRepositoryFileContent(activeRepoId, matchedFile.path);
+            repoFileContentCacheRef.current[getRepoFileCacheKey(activeRepoId, matchedFile.path)] = fileContent;
+          }
+
+          if (fileContent.language.startsWith('binary:image/') && (fileContent.content || '').startsWith('data:')) {
+            resolvedSources[source] = fileContent.content || '';
+            continue;
+          }
+
+          if (matchedFile.path.toLowerCase().endsWith('.svg') && fileContent.content) {
+            resolvedSources[source] = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fileContent.content)}`;
+          }
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error('Unable to resolve README image assets:', error);
+        }
+      } finally {
+        if (!isCancelled) {
+          setReadmeAssetUrls(resolvedSources);
+          setIsReadmeAssetLoading(false);
+        }
+      }
+    };
+
+    void loadReadmeAssets();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [repositoryFiles, selectedFileContent, selectedRepoId]);
+
+  useEffect(() => {
+    const username = (user?.username || '').trim();
+    if (!username) {
+      setProfileReadmeAssetUrls({});
+      setIsProfileReadmeAssetLoading(false);
+      return;
+    }
+
+    const profileRepoName = `${username}.md`.toLowerCase();
+    const legacyProfileRepoName = username.toLowerCase();
+    const profileRepo = repositories.find((repository) => {
+      const repoName = repository.name.toLowerCase();
+      const repoSlug = repository.slug.toLowerCase();
+      return repoName === profileRepoName || repoSlug === profileRepoName || repoName === legacyProfileRepoName || repoSlug === legacyProfileRepoName;
+    });
+
+    if (!profileRepo) {
+      setProfileReadmeAssetUrls({});
+      setIsProfileReadmeAssetLoading(false);
+      return;
+    }
+
+    const sources = collectReadmeAssetSources(profileReadmeDraft || '');
+    if (!sources.length) {
+      setProfileReadmeAssetUrls({});
+      setIsProfileReadmeAssetLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadProfileReadmeAssets = async () => {
+      setIsProfileReadmeAssetLoading(true);
+      const resolvedSources: Record<string, string> = {};
+
+      try {
+        const profileFilePath = `${username}.md`;
+        const filesInProfileRepo =
+          repoFileListCacheRef.current[profileRepo.id] ||
+          (await listRepositoryFiles(profileRepo.id));
+        repoFileListCacheRef.current[profileRepo.id] = filesInProfileRepo;
+
+        for (const source of sources) {
+          if (isAbsoluteAssetSource(source)) {
+            resolvedSources[source] = source;
+            continue;
+          }
+
+          const repoPath = resolveRepoRelativePath(profileFilePath, source);
+          if (!repoPath) {
+            continue;
+          }
+
+          const matchedFile = filesInProfileRepo.find((file) => normalizeRepoPath(file.path) === repoPath);
+          if (!matchedFile) {
+            continue;
+          }
+
+          const cacheKey = getRepoFileCacheKey(profileRepo.id, matchedFile.path);
+          let fileContent = repoFileContentCacheRef.current[cacheKey];
+          if (!fileContent) {
+            fileContent = await getRepositoryFileContent(profileRepo.id, matchedFile.path);
+            repoFileContentCacheRef.current[cacheKey] = fileContent;
+          }
+
+          if (fileContent.language.startsWith('binary:image/') && (fileContent.content || '').startsWith('data:')) {
+            resolvedSources[source] = fileContent.content || '';
+            continue;
+          }
+
+          if (matchedFile.path.toLowerCase().endsWith('.svg') && fileContent.content) {
+            resolvedSources[source] = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fileContent.content)}`;
+          }
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error('Unable to resolve profile README assets:', error);
+        }
+      } finally {
+        if (!isCancelled) {
+          setProfileReadmeAssetUrls(resolvedSources);
+          setIsProfileReadmeAssetLoading(false);
+        }
+      }
+    };
+
+    void loadProfileReadmeAssets();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [profileReadmeDraft, repositories, user?.username]);
 
   const handleCreateRepository = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -450,6 +733,8 @@ const Dashboard = () => {
 
   const canConfirmDelete =
     Boolean(deleteTargetRepository) && deleteRepositoryInput.trim() === deleteTargetRepository?.name;
+  const resolveRepositoryReadmeAssetUrl = (source: string) => readmeAssetUrls[source] || source;
+  const resolveProfileReadmeAssetUrl = (source: string) => profileReadmeAssetUrls[source] || source;
 
   return (
     <div className="min-h-screen bg-background">
@@ -529,6 +814,50 @@ const Dashboard = () => {
                   </TabsList>
 
                   <TabsContent value="overview" className="space-y-6">
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <CardTitle className="text-xl">Profile README</CardTitle>
+                            <CardDescription>Displayed on your profile page like GitHub.</CardDescription>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            aria-label="Edit README file"
+                            onClick={() => setActiveTab('profile')}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="rounded-md border border-border overflow-hidden">
+                          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-2">
+                            <p className="text-sm font-medium text-foreground">README.md</p>
+                            <button
+                              type="button"
+                              onClick={() => setActiveTab('profile')}
+                              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit file
+                            </button>
+                          </div>
+                          <div className="p-4">
+                            {isProfileReadmeAssetLoading && (
+                              <p className="text-xs text-muted-foreground mb-2">Loading README assets...</p>
+                            )}
+                            <GitHubReadme
+                              content={profileReadmeDraft.trim() || '*No README content yet. Click edit file to add one.*'}
+                              resolveAssetUrl={resolveProfileReadmeAssetUrl}
+                            />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
                     <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                       <Card>
                         <CardHeader>
@@ -548,19 +877,33 @@ const Dashboard = () => {
                           ) : (
                             <div className="space-y-3">
                               {filteredRepositories.map((repo) => (
-                                <div
-                                  key={repo.id}
-                                  className={`w-full rounded-md border p-3 transition-colors ${
-                                    repo.id === selectedRepoId
-                                      ? 'border-primary bg-primary/10'
-                                      : 'border-border hover:border-primary/50 hover:bg-muted/40'
-                                  }`}
-                                >
-                                  <div className="flex items-start justify-between gap-2">
+                                (() => {
+                                  const normalizedUsername = (user?.username || '').toLowerCase();
+                                  const protectedRepositoryName = normalizedUsername ? `${normalizedUsername}.md` : '';
+                                  const isProtectedProfileRepo =
+                                    Boolean(protectedRepositoryName) &&
+                                    (repo.name.toLowerCase() === protectedRepositoryName ||
+                                      repo.slug.toLowerCase() === protectedRepositoryName);
+
+                                  return (
+                                    <div
+                                      key={repo.id}
+                                      className={`w-full rounded-md border p-3 transition-colors ${
+                                        repo.id === selectedRepoId
+                                          ? 'border-primary bg-primary/10'
+                                          : 'border-border hover:border-primary/50 hover:bg-muted/40'
+                                      }`}
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
                                     <button type="button" onClick={() => setSelectedRepoId(repo.id)} className="text-left flex-1 min-w-0">
                                       <div className="flex items-center gap-2 flex-wrap">
                                         <p className="font-semibold text-foreground truncate">{repo.name}</p>
                                         <span className="text-xs uppercase tracking-wide text-muted-foreground">{repo.visibility}</span>
+                                        {isProtectedProfileRepo && (
+                                          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/30">
+                                            Profile Repo
+                                          </span>
+                                        )}
                                         {repo.archived_at && (
                                           <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
                                             Archived
@@ -588,18 +931,46 @@ const Dashboard = () => {
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         {repo.archived_at ? (
-                                          <DropdownMenuItem onSelect={() => void handleRepositoryArchiveState(repo, false)}>
+                                          <DropdownMenuItem
+                                            disabled={isProtectedProfileRepo}
+                                            onSelect={(event) => {
+                                              if (isProtectedProfileRepo) {
+                                                event.preventDefault();
+                                                return;
+                                              }
+                                              void handleRepositoryArchiveState(repo, false);
+                                            }}
+                                          >
                                             <ArchiveRestore className="mr-2 h-4 w-4" />
                                             Unarchive Repository
                                           </DropdownMenuItem>
                                         ) : (
-                                          <DropdownMenuItem onSelect={() => void handleRepositoryArchiveState(repo, true)}>
+                                          <DropdownMenuItem
+                                            disabled={isProtectedProfileRepo}
+                                            onSelect={(event) => {
+                                              if (isProtectedProfileRepo) {
+                                                event.preventDefault();
+                                                return;
+                                              }
+                                              void handleRepositoryArchiveState(repo, true);
+                                            }}
+                                          >
                                             <Archive className="mr-2 h-4 w-4" />
                                             Archive Repository
                                           </DropdownMenuItem>
                                         )}
                                         <DropdownMenuSeparator />
-                                        <DropdownMenuItem onSelect={() => openDeleteDialog(repo)} className="text-destructive focus:text-destructive">
+                                        <DropdownMenuItem
+                                          disabled={isProtectedProfileRepo}
+                                          onSelect={(event) => {
+                                            if (isProtectedProfileRepo) {
+                                              event.preventDefault();
+                                              return;
+                                            }
+                                            openDeleteDialog(repo);
+                                          }}
+                                          className="text-destructive focus:text-destructive"
+                                        >
                                           <Trash2 className="mr-2 h-4 w-4" />
                                           Delete Repository
                                         </DropdownMenuItem>
@@ -607,6 +978,8 @@ const Dashboard = () => {
                                     </DropdownMenu>
                                   </div>
                                 </div>
+                                  );
+                                })()
                               ))}
                             </div>
                           )}
@@ -819,7 +1192,6 @@ const Dashboard = () => {
                               type="file"
                               multiple
                               onChange={(event) => setUploadFiles(Array.from(event.target.files || []))}
-                              accept=".ts,.tsx,.js,.jsx,.json,.html,.css,.scss,.md,.py,.java,.c,.cpp,.cs,.go,.rs,.sql,.yml,.yaml,.xml,.sh,.txt"
                             />
                             {uploadFiles.length > 0 && (
                               <p className="text-xs text-muted-foreground mt-2">{uploadFiles.length} file(s) selected.</p>
@@ -911,27 +1283,60 @@ const Dashboard = () => {
                               <div className="p-4 text-sm text-muted-foreground">Loading file content...</div>
                             ) : selectedFileContent ? (
                               <div className="max-h-[540px] overflow-auto bg-[#0b0f14]">
-                                <SyntaxHighlighter
-                                  language={getSyntaxLanguage(selectedFileContent.language)}
-                                  style={oneDark}
-                                  showLineNumbers
-                                  wrapLongLines
-                                  customStyle={{
-                                    margin: 0,
-                                    padding: '1rem',
-                                    background: '#0b0f14',
-                                    fontSize: '0.78rem',
-                                    minHeight: '100%',
-                                  }}
-                                  lineNumberStyle={{
-                                    minWidth: '2.5em',
-                                    color: '#6b7280',
-                                    userSelect: 'none',
-                                    paddingRight: '1rem',
-                                  }}
-                                >
-                                  {selectedFileContent.content || ''}
-                                </SyntaxHighlighter>
+                                {selectedFileContent.language.startsWith('binary:') ? (
+                                  (() => {
+                                    const mime = getBinaryMimeType(selectedFileContent.language);
+                                    if (mime.startsWith('image/') && (selectedFileContent.content || '').startsWith('data:')) {
+                                      return (
+                                        <div className="p-4 bg-card">
+                                          <img
+                                            src={selectedFileContent.content || ''}
+                                            alt={selectedFileContent.path}
+                                            className="max-w-full h-auto rounded-md border border-border"
+                                          />
+                                        </div>
+                                      );
+                                    }
+
+                                    return (
+                                      <div className="p-4 text-sm text-muted-foreground bg-card">
+                                        Binary file preview is not available for this file type yet.
+                                      </div>
+                                    );
+                                  })()
+                                ) : selectedFileContent.path.toLowerCase().endsWith('.md') ? (
+                                  <div className="bg-card p-4 space-y-2">
+                                    {isReadmeAssetLoading && (
+                                      <p className="text-xs text-muted-foreground">Loading README assets...</p>
+                                    )}
+                                    <GitHubReadme
+                                      content={selectedFileContent.content || ''}
+                                      resolveAssetUrl={resolveRepositoryReadmeAssetUrl}
+                                    />
+                                  </div>
+                                ) : (
+                                  <SyntaxHighlighter
+                                    language={getSyntaxLanguage(selectedFileContent.language)}
+                                    style={oneDark}
+                                    showLineNumbers
+                                    wrapLongLines
+                                    customStyle={{
+                                      margin: 0,
+                                      padding: '1rem',
+                                      background: '#0b0f14',
+                                      fontSize: '0.78rem',
+                                      minHeight: '100%',
+                                    }}
+                                    lineNumberStyle={{
+                                      minWidth: '2.5em',
+                                      color: '#6b7280',
+                                      userSelect: 'none',
+                                      paddingRight: '1rem',
+                                    }}
+                                  >
+                                    {selectedFileContent.content || ''}
+                                  </SyntaxHighlighter>
+                                )}
                               </div>
                             ) : (
                               <div className="p-4 text-sm text-muted-foreground">Choose a file to view code.</div>
@@ -966,9 +1371,10 @@ const Dashboard = () => {
                           <div>
                             <p className="text-sm text-foreground mb-2">Preview</p>
                             <div className="min-h-[420px] rounded-md border border-border bg-card p-4 overflow-auto">
-                              <article className="prose prose-sm prose-invert max-w-none">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{profileReadmeDraft}</ReactMarkdown>
-                              </article>
+                              {isProfileReadmeAssetLoading && (
+                                <p className="text-xs text-muted-foreground mb-2">Loading README assets...</p>
+                              )}
+                              <GitHubReadme content={profileReadmeDraft} resolveAssetUrl={resolveProfileReadmeAssetUrl} />
                             </div>
                           </div>
                         </div>

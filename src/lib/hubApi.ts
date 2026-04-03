@@ -80,8 +80,9 @@ export type UploadRepositoryFilesInput = {
 };
 
 const MAX_FILES_PER_UPLOAD = 30;
-const MAX_FILE_SIZE_BYTES = 350_000;
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const PROFILE_SELECT_COLUMNS = 'id, email, full_name, username, profile_readme, bio, phone_number, avatar_url';
+const DEFAULT_PROFILE_REPOSITORY_DESCRIPTION = 'Default profile repository for dashboard README.';
 
 const extensionLanguageMap: Record<string, string> = {
   ts: 'typescript',
@@ -119,6 +120,65 @@ const normalizeRepoSlug = (value: string) =>
 const detectLanguageFromPath = (path: string) => {
   const extension = path.split('.').pop()?.toLowerCase() || '';
   return extensionLanguageMap[extension] || 'plaintext';
+};
+
+const normalizeRepositoryPath = (value: string) =>
+  value
+    .replace(/\\/g, '/')
+    .replace(/^\.?\//, '')
+    .split('/')
+    .filter(Boolean)
+    .join('/')
+    .toLowerCase();
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error(`Unable to read "${file.name}".`));
+    reader.readAsDataURL(file);
+  });
+
+const isKnownTextMime = (mimeType: string) => {
+  const normalized = (mimeType || '').toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized.startsWith('text/')) {
+    return true;
+  }
+
+  return [
+    'application/json',
+    'application/javascript',
+    'application/xml',
+    'application/x-sh',
+    'image/svg+xml',
+  ].some((mime) => normalized.includes(mime));
+};
+
+const hasNullByte = (buffer: ArrayBuffer) => {
+  const view = new Uint8Array(buffer);
+  const sampleSize = Math.min(view.length, 8192);
+  for (let index = 0; index < sampleSize; index += 1) {
+    if (view[index] === 0) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const shouldTreatAsBinary = ({ file, path, buffer }: { file: File; path: string; buffer: ArrayBuffer }) => {
+  const extension = path.split('.').pop()?.toLowerCase() || '';
+  const isKnownTextExtension = Boolean(extensionLanguageMap[extension]);
+
+  if (isKnownTextMime(file.type) || isKnownTextExtension) {
+    return false;
+  }
+
+  return hasNullByte(buffer) || Boolean(file.type && !file.type.startsWith('text/'));
 };
 
 const normalizeUsername = (value: string) =>
@@ -317,6 +377,292 @@ const buildDefaultProfileReadme = (fullName: string) => {
 `;
 };
 
+const getProfileRepositoryName = (username: string, userId: string) => {
+  const normalizedUsername = (username || '').trim();
+  if (normalizedUsername) {
+    return `${normalizedUsername}.md`;
+  }
+
+  return `user-${userId.slice(0, 6).toLowerCase()}.md`;
+};
+
+const getProfileRepositorySlug = (username: string, userId: string) =>
+  normalizeRepoSlug(getProfileRepositoryName(username, userId));
+
+const getLegacyProfileRepositorySlug = (username: string, userId: string) =>
+  normalizeRepoSlug((username || '').trim() || `user-${userId.slice(0, 6).toLowerCase()}`);
+
+const getProfileRepositoryFilePath = (username: string, userId: string) =>
+  getProfileRepositoryName(username, userId);
+
+const isProfileRepositoryForUser = ({
+  repoName,
+  repoSlug,
+  username,
+  userId,
+}: {
+  repoName: string;
+  repoSlug: string;
+  username: string;
+  userId: string;
+}) => {
+  const expectedName = getProfileRepositoryName(username, userId).toLowerCase();
+  const expectedSlug = getProfileRepositorySlug(username, userId);
+  return repoName.toLowerCase() === expectedName || repoSlug === expectedSlug;
+};
+
+const upsertRepositoryFile = async ({
+  supabase,
+  repoId,
+  userId,
+  filePath,
+  content,
+}: {
+  supabase: any;
+  repoId: string;
+  userId: string;
+  filePath: string;
+  content: string;
+}) => {
+  const language = filePath.toLowerCase().endsWith('.md') ? 'markdown' : detectLanguageFromPath(filePath);
+  const { error: fileError } = await supabase.from('repo_files').upsert(
+    {
+      repo_id: repoId,
+      path: filePath,
+      language,
+      content,
+      size_bytes: new TextEncoder().encode(content).length,
+      created_by: userId,
+    },
+    {
+      onConflict: 'repo_id,path',
+    },
+  );
+
+  if (fileError) {
+    throw new Error(fileError.message);
+  }
+};
+
+const readRepositoryFileByPath = async ({
+  supabase,
+  repoId,
+  filePath,
+}: {
+  supabase: any;
+  repoId: string;
+  filePath: string;
+}) => {
+  const { data, error } = await supabase
+    .from('repo_files')
+    .select('path, content, language')
+    .eq('repo_id', repoId)
+    .eq('path', filePath)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as { path: string; content: string; language: string } | null;
+};
+
+const syncRepositoryProfileFiles = async ({
+  supabase,
+  repoId,
+  userId,
+  username,
+  profileMarkdown,
+  commitMessage,
+  createCommit,
+}: {
+  supabase: any;
+  repoId: string;
+  userId: string;
+  username: string;
+  profileMarkdown: string;
+  commitMessage: string;
+  createCommit: boolean;
+}) => {
+  const profileFilePath = getProfileRepositoryFilePath(username, userId);
+
+  const { error: repoUpdateError } = await supabase
+    .from('repositories')
+    .update({
+      readme_md: profileMarkdown,
+    })
+    .eq('id', repoId);
+
+  if (repoUpdateError) {
+    throw new Error(repoUpdateError.message);
+  }
+
+  await upsertRepositoryFile({
+    supabase,
+    repoId,
+    userId,
+    filePath: profileFilePath,
+    content: profileMarkdown,
+  });
+
+  await upsertRepositoryFile({
+    supabase,
+    repoId,
+    userId,
+    filePath: 'README.md',
+    content: profileMarkdown,
+  });
+
+  if (!createCommit) {
+    return;
+  }
+
+  const { error: commitError } = await supabase.from('repo_commits').insert({
+    repo_id: repoId,
+    author_id: userId,
+    message: commitMessage,
+    files_changed: 1,
+  });
+
+  if (commitError) {
+    throw new Error(commitError.message);
+  }
+};
+
+const ensureDefaultProfileRepository = async ({
+  supabase,
+  userId,
+  username,
+  profileMarkdown,
+}: {
+  supabase: any;
+  userId: string;
+  username: string;
+  profileMarkdown: string;
+}): Promise<{ repository: HubRepository; createdNow: boolean; profileFilePath: string }> => {
+  const repoName = getProfileRepositoryName(username, userId);
+  const repoSlug = getProfileRepositorySlug(username, userId);
+  const legacyRepoSlug = getLegacyProfileRepositorySlug(username, userId);
+  const profileFilePath = getProfileRepositoryFilePath(username, userId);
+
+  const fetchBySlug = async (slug: string) => {
+    const { data, error } = await supabase
+      .from('repositories')
+      .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+      .eq('owner_id', userId)
+      .eq('slug', slug)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data || null) as HubRepository | null;
+  };
+
+  let existingRepository = await fetchBySlug(repoSlug);
+  let createdNow = false;
+
+  if (!existingRepository && legacyRepoSlug !== repoSlug) {
+    const legacyRepository = await fetchBySlug(legacyRepoSlug);
+    if (legacyRepository) {
+      const { data: renamedRepository, error: renameError } = await supabase
+        .from('repositories')
+        .update({
+          name: repoName,
+          slug: repoSlug,
+        })
+        .eq('id', legacyRepository.id)
+        .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+        .single();
+
+      if (renameError) {
+        throw new Error(renameError.message);
+      }
+
+      existingRepository = renamedRepository as HubRepository;
+    }
+  }
+
+  if (!existingRepository) {
+    const { data, error } = await supabase
+      .from('repositories')
+      .insert({
+        owner_id: userId,
+        name: repoName,
+        slug: repoSlug,
+        description: DEFAULT_PROFILE_REPOSITORY_DESCRIPTION,
+        visibility: 'public',
+        readme_md: profileMarkdown,
+      })
+      .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at')
+      .single();
+
+    if (error) {
+      if (error.code !== '23505') {
+        throw new Error(error.message);
+      }
+
+      existingRepository = await fetchBySlug(repoSlug);
+      if (!existingRepository) {
+        throw new Error('Unable to create default profile repository.');
+      }
+    } else {
+      existingRepository = data as HubRepository;
+      createdNow = true;
+    }
+  }
+
+  if (!existingRepository) {
+    throw new Error('Unable to resolve default profile repository.');
+  }
+
+  const existingProfileFile = await readRepositoryFileByPath({
+    supabase,
+    repoId: existingRepository.id,
+    filePath: profileFilePath,
+  });
+  const existingReadmeFile = await readRepositoryFileByPath({
+    supabase,
+    repoId: existingRepository.id,
+    filePath: 'README.md',
+  });
+
+  const shouldInitializeFiles =
+    createdNow ||
+    !existingProfileFile?.content?.trim() ||
+    !existingReadmeFile?.content?.trim() ||
+    !existingRepository.readme_md?.trim();
+
+  if (createdNow) {
+    await syncRepositoryProfileFiles({
+      supabase,
+      repoId: existingRepository.id,
+      userId,
+      username,
+      profileMarkdown,
+      commitMessage: 'Initial profile README',
+      createCommit: true,
+    });
+  } else if (shouldInitializeFiles) {
+    await syncRepositoryProfileFiles({
+      supabase,
+      repoId: existingRepository.id,
+      userId,
+      username,
+      profileMarkdown,
+      commitMessage: 'Initialize profile README',
+      createCommit: false,
+    });
+  }
+
+  return {
+    repository: existingRepository,
+    createdNow,
+    profileFilePath,
+  };
+};
+
 export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
   const { supabase, user } = await ensureAuthenticatedUser();
   const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
@@ -330,6 +676,34 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
     email: user.email || '',
     userId: user.id,
   });
+  let resolvedProfileReadme = profile.profile_readme || buildDefaultProfileReadme(profile.full_name || fullName);
+
+  const { repository: profileRepository, profileFilePath } = await ensureDefaultProfileRepository({
+    supabase,
+    userId: user.id,
+    username: resolvedUsername,
+    profileMarkdown: resolvedProfileReadme,
+  });
+
+  const profileFile = await readRepositoryFileByPath({
+    supabase,
+    repoId: profileRepository.id,
+    filePath: profileFilePath,
+  });
+
+  if (profileFile?.content && profileFile.content !== resolvedProfileReadme) {
+    resolvedProfileReadme = profileFile.content;
+    const { error: profileReadmeSyncError } = await supabase
+      .from('user_profiles')
+      .update({
+        profile_readme: resolvedProfileReadme,
+      })
+      .eq('id', user.id);
+
+    if (profileReadmeSyncError) {
+      throw new Error(profileReadmeSyncError.message);
+    }
+  }
 
   const [{ data: repositories, error: repositoriesError }, { data: activityLogs, error: activityError }] =
     await Promise.all([
@@ -363,7 +737,7 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
       bio: profile.bio || '',
       avatarUrl: profile.avatar_url || '',
     },
-    profileReadme: profile.profile_readme || buildDefaultProfileReadme(profile.full_name || fullName),
+    profileReadme: resolvedProfileReadme,
     repositories: (repositories || []) as HubRepository[],
     activityLogs: (activityLogs || []) as HubActivityLog[],
   };
@@ -513,17 +887,44 @@ export const updateCurrentUserEmail = async (email: string) => {
 
 export const updateProfileReadme = async (profileReadme: string) => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const nextReadme = profileReadme;
   const { data, error } = await supabase
     .from('user_profiles')
     .update({
-      profile_readme: profileReadme,
+      profile_readme: nextReadme,
     })
     .eq('id', user.id)
-    .select('id')
+    .select('id, username, full_name')
     .single();
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  const fallbackUsername = buildUsernameCandidate({
+    fullName: data.full_name || (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer',
+    email: user.email || '',
+    userId: user.id,
+  });
+  const resolvedUsername = (data.username as string | null) || fallbackUsername;
+
+  const { repository: defaultRepo, createdNow } = await ensureDefaultProfileRepository({
+    supabase,
+    userId: user.id,
+    username: resolvedUsername,
+    profileMarkdown: nextReadme,
+  });
+
+  if (!createdNow && defaultRepo.readme_md !== nextReadme) {
+    await syncRepositoryProfileFiles({
+      supabase,
+      repoId: defaultRepo.id,
+      userId: user.id,
+      username: resolvedUsername,
+      profileMarkdown: nextReadme,
+      commitMessage: 'Update profile README',
+      createCommit: true,
+    });
   }
 
   await pushActivity({
@@ -531,7 +932,8 @@ export const updateProfileReadme = async (profileReadme: string) => {
     email: user.email || '',
     activityType: 'profile_readme_updated',
     context: {
-      length: profileReadme.length,
+      length: nextReadme.length,
+      repo_id: defaultRepo.id,
     },
   });
 
@@ -698,6 +1100,39 @@ export const setRepositoryArchiveState = async ({
   archive: boolean;
 }) => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const profile = await ensureProfileRow({
+    userId: user.id,
+    email: user.email || '',
+    fullName,
+  });
+  const resolvedUsername = (profile.username as string | null) || buildUsernameCandidate({
+    fullName: profile.full_name || fullName,
+    email: user.email || '',
+    userId: user.id,
+  });
+  const { data: targetRepository, error: targetRepositoryError } = await supabase
+    .from('repositories')
+    .select('id, name, slug')
+    .eq('id', repoId)
+    .single();
+
+  if (targetRepositoryError) {
+    throw new Error(targetRepositoryError.message);
+  }
+
+  if (
+    archive &&
+    isProfileRepositoryForUser({
+      repoName: targetRepository.name,
+      repoSlug: targetRepository.slug,
+      username: resolvedUsername,
+      userId: user.id,
+    })
+  ) {
+    throw new Error('Profile repository cannot be archived.');
+  }
+
   const { data, error } = await supabase
     .from('repositories')
     .update({
@@ -725,14 +1160,36 @@ export const setRepositoryArchiveState = async ({
 
 export const deleteRepository = async (repoId: string) => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const profile = await ensureProfileRow({
+    userId: user.id,
+    email: user.email || '',
+    fullName,
+  });
+  const resolvedUsername = (profile.username as string | null) || buildUsernameCandidate({
+    fullName: profile.full_name || fullName,
+    email: user.email || '',
+    userId: user.id,
+  });
   const { data: repo, error: repoError } = await supabase
     .from('repositories')
-    .select('id, name')
+    .select('id, name, slug')
     .eq('id', repoId)
     .single();
 
   if (repoError) {
     throw new Error(repoError.message);
+  }
+
+  if (
+    isProfileRepositoryForUser({
+      repoName: repo.name,
+      repoSlug: repo.slug,
+      username: resolvedUsername,
+      userId: user.id,
+    })
+  ) {
+    throw new Error('Profile repository cannot be deleted.');
   }
 
   const { error } = await supabase.from('repositories').delete().eq('id', repoId);
@@ -821,7 +1278,7 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
 
   for (const file of files) {
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      throw new Error(`"${file.name}" is larger than ${Math.floor(MAX_FILE_SIZE_BYTES / 1024)} KB.`);
+      throw new Error(`"${file.name}" is larger than ${(MAX_FILE_SIZE_BYTES / (1024 * 1024)).toFixed(1)} MB.`);
     }
 
     const path = (file.webkitRelativePath || file.name).trim();
@@ -829,16 +1286,18 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
       continue;
     }
 
-    const content = await file.text();
-
-    if (content.includes('\u0000')) {
-      throw new Error(`"${path}" appears to be a binary file. Upload only text/code files.`);
-    }
+    const buffer = await file.arrayBuffer();
+    const binary = shouldTreatAsBinary({
+      file,
+      path,
+      buffer,
+    });
+    const content = binary ? await readFileAsDataUrl(file) : await file.text();
 
     records.push({
       repo_id: repoId,
       path,
-      language: detectLanguageFromPath(path),
+      language: binary ? `binary:${file.type || 'application/octet-stream'}` : detectLanguageFromPath(path),
       content,
       size_bytes: file.size,
       created_by: user.id,
@@ -846,7 +1305,7 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
   }
 
   if (!records.length) {
-    throw new Error('No readable code files were found in your selection.');
+    throw new Error('No files were found in your selection.');
   }
 
   const { error: uploadError } = await supabase.from('repo_files').upsert(records, {
@@ -869,14 +1328,43 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
     throw new Error(commitError.message);
   }
 
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const profile = await ensureProfileRow({
+    userId: user.id,
+    email: user.email || '',
+    fullName,
+  });
+  const resolvedUsername = (profile.username as string | null) || buildUsernameCandidate({
+    fullName: profile.full_name || fullName,
+    email: user.email || '',
+    userId: user.id,
+  });
+  const profileFilePath = getProfileRepositoryFilePath(resolvedUsername, user.id);
+  const normalizedProfileFilePath = normalizeRepositoryPath(profileFilePath);
+  const profileFileRecord = records.find((record) => normalizeRepositoryPath(record.path) === normalizedProfileFilePath);
   const readmeRecord = records.find((record) => record.path.toLowerCase() === 'readme.md');
-  if (readmeRecord) {
+  const dashboardProfileContent = profileFileRecord?.content || readmeRecord?.content || '';
+
+  if (dashboardProfileContent) {
     await supabase
       .from('repositories')
       .update({
-        readme_md: readmeRecord.content,
+        readme_md: dashboardProfileContent,
       })
       .eq('id', repoId);
+  }
+
+  if (profileFileRecord) {
+    const { error: profileUpdateError } = await supabase
+      .from('user_profiles')
+      .update({
+        profile_readme: profileFileRecord.content,
+      })
+      .eq('id', user.id);
+
+    if (profileUpdateError) {
+      throw new Error(profileUpdateError.message);
+    }
   }
 
   await pushActivity({
