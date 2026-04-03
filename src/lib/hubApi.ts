@@ -41,12 +41,25 @@ export type HubActivityLog = {
   created_at: string;
 };
 
+export type HubUserProfile = {
+  id: string;
+  email: string;
+  fullName: string;
+  username: string;
+  profileReadme: string;
+  bio: string;
+  phoneNumber: string;
+  avatarUrl: string;
+};
+
 export type DashboardBootstrap = {
   user: {
     id: string;
     email: string;
     fullName: string;
     username: string;
+    bio: string;
+    avatarUrl: string;
   };
   profileReadme: string;
   repositories: HubRepository[];
@@ -68,6 +81,7 @@ export type UploadRepositoryFilesInput = {
 
 const MAX_FILES_PER_UPLOAD = 30;
 const MAX_FILE_SIZE_BYTES = 350_000;
+const PROFILE_SELECT_COLUMNS = 'id, email, full_name, username, profile_readme, bio, phone_number, avatar_url';
 
 const extensionLanguageMap: Record<string, string> = {
   ts: 'typescript',
@@ -164,6 +178,34 @@ const pushActivity = async ({
   }
 };
 
+const mapProfileRecord = ({
+  profile,
+  fallbackEmail,
+  fallbackName,
+}: {
+  profile: {
+    id: string;
+    email: string | null;
+    full_name: string | null;
+    username: string | null;
+    profile_readme: string | null;
+    bio: string | null;
+    phone_number: string | null;
+    avatar_url: string | null;
+  };
+  fallbackEmail: string;
+  fallbackName: string;
+}): HubUserProfile => ({
+  id: profile.id,
+  email: (profile.email || fallbackEmail || '').trim(),
+  fullName: (profile.full_name || fallbackName || '').trim(),
+  username: (profile.username || '').trim(),
+  profileReadme: profile.profile_readme || '',
+  bio: profile.bio || '',
+  phoneNumber: profile.phone_number || '',
+  avatarUrl: profile.avatar_url || '',
+});
+
 const ensureProfileRow = async ({
   userId,
   email,
@@ -176,7 +218,7 @@ const ensureProfileRow = async ({
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('user_profiles')
-    .select('id, email, full_name, username, profile_readme')
+    .select(PROFILE_SELECT_COLUMNS)
     .eq('id', userId)
     .maybeSingle();
 
@@ -198,7 +240,7 @@ const ensureProfileRow = async ({
           username: fallbackUsername,
         })
         .eq('id', userId)
-        .select('id, email, full_name, username, profile_readme')
+        .select(PROFILE_SELECT_COLUMNS)
         .single();
 
       if (!updateError && updated) {
@@ -223,8 +265,11 @@ const ensureProfileRow = async ({
       full_name: fullName,
       username: initialUsername,
       profile_readme: '',
+      bio: '',
+      phone_number: '',
+      avatar_url: '',
     })
-    .select('id, email, full_name, username, profile_readme')
+    .select(PROFILE_SELECT_COLUMNS)
     .single();
 
   if (insertError && insertError.code === '23505') {
@@ -237,8 +282,11 @@ const ensureProfileRow = async ({
         full_name: fullName,
         username: fallbackUsername,
         profile_readme: '',
+        bio: '',
+        phone_number: '',
+        avatar_url: '',
       })
-      .select('id, email, full_name, username, profile_readme')
+      .select(PROFILE_SELECT_COLUMNS)
       .single();
 
     if (fallbackError) {
@@ -312,6 +360,8 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
       email: user.email || '',
       fullName: profile.full_name || fullName,
       username: resolvedUsername,
+      bio: profile.bio || '',
+      avatarUrl: profile.avatar_url || '',
     },
     profileReadme: profile.profile_readme || buildDefaultProfileReadme(profile.full_name || fullName),
     repositories: (repositories || []) as HubRepository[],
@@ -320,7 +370,7 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
 };
 
 export const getCurrentUserUsername = async () => {
-  const { supabase, user } = await ensureAuthenticatedUser();
+  const { user } = await ensureAuthenticatedUser();
   const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
   const profile = await ensureProfileRow({
     userId: user.id,
@@ -329,6 +379,136 @@ export const getCurrentUserUsername = async () => {
   });
 
   return profile.username as string;
+};
+
+export const getCurrentUserProfile = async (): Promise<HubUserProfile> => {
+  const { user } = await ensureAuthenticatedUser();
+  const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'CyberX Developer';
+  const profile = await ensureProfileRow({
+    userId: user.id,
+    email: user.email || '',
+    fullName,
+  });
+
+  return mapProfileRecord({
+    profile,
+    fallbackEmail: user.email || '',
+    fallbackName: fullName,
+  });
+};
+
+export const updateCurrentUserProfile = async ({
+  fullName,
+  bio,
+  phoneNumber,
+  avatarUrl,
+}: {
+  fullName: string;
+  bio: string;
+  phoneNumber: string;
+  avatarUrl: string;
+}): Promise<HubUserProfile> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const nextFullName = fullName.trim();
+  const nextBio = bio.trim();
+  const nextPhoneNumber = phoneNumber.trim();
+  const nextAvatarUrl = avatarUrl.trim();
+
+  if (!nextFullName) {
+    throw new Error('Full name is required.');
+  }
+
+  if (nextAvatarUrl && !nextAvatarUrl.startsWith('http') && !nextAvatarUrl.startsWith('data:image/')) {
+    throw new Error('Avatar must be an image URL or an uploaded image.');
+  }
+
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .update({
+      full_name: nextFullName,
+      bio: nextBio,
+      phone_number: nextPhoneNumber,
+      avatar_url: nextAvatarUrl,
+    })
+    .eq('id', user.id)
+    .select(PROFILE_SELECT_COLUMNS)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Unable to update profile.');
+  }
+
+  const { error: metadataError } = await supabase.auth.updateUser({
+    data: {
+      full_name: nextFullName,
+    },
+  });
+
+  if (metadataError) {
+    console.error('Unable to sync auth metadata full_name:', metadataError);
+  }
+
+  await pushActivity({
+    userId: user.id,
+    email: user.email || '',
+    activityType: 'profile_updated',
+    context: {
+      has_bio: Boolean(nextBio),
+      has_phone: Boolean(nextPhoneNumber),
+      has_avatar: Boolean(nextAvatarUrl),
+    },
+  });
+
+  return mapProfileRecord({
+    profile: data,
+    fallbackEmail: user.email || '',
+    fallbackName: nextFullName,
+  });
+};
+
+export const updateCurrentUserEmail = async (email: string) => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const nextEmail = email.trim().toLowerCase();
+
+  if (!nextEmail) {
+    throw new Error('Email is required.');
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+    throw new Error('Enter a valid email address.');
+  }
+
+  const { error: authError } = await supabase.auth.updateUser({
+    email: nextEmail,
+  });
+
+  if (authError) {
+    throw new Error(authError.message);
+  }
+
+  const { error: profileError } = await supabase
+    .from('user_profiles')
+    .update({
+      email: nextEmail,
+    })
+    .eq('id', user.id);
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  await pushActivity({
+    userId: user.id,
+    email: user.email || '',
+    activityType: 'profile_email_update_requested',
+    context: {
+      email: nextEmail,
+    },
+  });
+
+  return {
+    message: 'Email update requested. Check your inbox to confirm the new email address.',
+  };
 };
 
 export const updateProfileReadme = async (profileReadme: string) => {
