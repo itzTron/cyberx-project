@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ChevronDown, Lock, Shield, Terminal, Zap } from 'lucide-react';
@@ -10,6 +11,10 @@ import ToolCard from '@/components/ToolCard';
 import GlassCard from '@/components/GlassCard';
 import { tools } from '@/data/tools';
 
+const TYPEWRITER_TEXT = '2.0';
+const TYPING_SPEED = 200;    // ms per character
+const START_DELAY = 1200;     // ms before typing begins
+
 const stats = [
   { value: '4', label: 'Security Tools', icon: Shield },
   { value: '100%', label: 'Open Source', icon: Terminal },
@@ -18,6 +23,35 @@ const stats = [
 ];
 
 const Index = () => {
+  const [displayedText, setDisplayedText] = useState('');
+  const [showCursor, setShowCursor] = useState(true);
+  const [doneTyping, setDoneTyping] = useState(false);
+
+  useEffect(() => {
+    let charIndex = 0;
+
+    const startTimeout = setTimeout(() => {
+      const interval = setInterval(() => {
+        charIndex++;
+        setDisplayedText(TYPEWRITER_TEXT.slice(0, charIndex));
+        if (charIndex >= TYPEWRITER_TEXT.length) {
+          clearInterval(interval);
+          setDoneTyping(true);
+        }
+      }, TYPING_SPEED);
+
+      return () => clearInterval(interval);
+    }, START_DELAY);
+
+    return () => clearTimeout(startTimeout);
+  }, []);
+
+  // Blink the cursor
+  useEffect(() => {
+    const blink = setInterval(() => setShowCursor((v) => !v), 530);
+    return () => clearInterval(blink);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background relative">
       <MatrixRain />
@@ -45,7 +79,18 @@ const Index = () => {
             </motion.div>
 
             <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-              <span className="text-primary neon-text">Cyberspace-X 2.0</span>
+              <span className="text-primary neon-text">
+                Cyberspace-X{' '}
+                <span className="typewriter-version">
+                  {displayedText}
+                  <span
+                    className="typewriter-cursor"
+                    style={{ opacity: showCursor ? 1 : 0 }}
+                  >
+                    |
+                  </span>
+                </span>
+              </span>
               <br />
               <span className="text-foreground">Security Platform</span>
             </h1>

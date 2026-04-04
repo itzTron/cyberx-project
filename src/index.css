@@ -168,4 +168,185 @@
       opacity: 0;
     }
   }
+
+  .typewriter-version {
+    font-family: 'JetBrains Mono', monospace;
+    display: inline;
+    position: relative;
+  }
+
+  .typewriter-cursor {
+    display: inline;
+    font-weight: 300;
+    color: hsl(var(--matrix-green));
+    text-shadow:
+      0 0 10px hsl(var(--matrix-green) / 0.9),
+      0 0 20px hsl(var(--matrix-green) / 0.6),
+      0 0 40px hsl(var(--matrix-green) / 0.4);
+    transition: opacity 0.1s;
+    margin-left: 2px;
+  }
+}
+
+/* ================================================
+   PRELOADER STYLES
+   ================================================ */
+
+/* Logo wrapper */
+.preloader-logo-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+/* Shine container — clips the shine to the logo area */
+.preloader-shine-container {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+/* Logo image */
+.preloader-logo {
+  position: relative;
+  display: block;
+  width: 280px;
+  height: auto;
+  filter:
+    drop-shadow(0 0 12px rgba(0, 255, 136, 0.3))
+    drop-shadow(0 0 24px rgba(0, 180, 255, 0.15));
+  animation: preloader-logo-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes preloader-logo-pulse {
+  0%, 100% {
+    filter:
+      drop-shadow(0 0 12px rgba(0, 255, 136, 0.3))
+      drop-shadow(0 0 24px rgba(0, 180, 255, 0.15));
+  }
+  50% {
+    filter:
+      drop-shadow(0 0 20px rgba(0, 255, 136, 0.5))
+      drop-shadow(0 0 40px rgba(0, 180, 255, 0.3))
+      drop-shadow(0 0 60px rgba(0, 100, 255, 0.15));
+  }
+}
+
+/* Shine sweep overlay */
+.preloader-shine {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    105deg,
+    transparent 20%,
+    rgba(0, 255, 136, 0.06) 30%,
+    rgba(0, 255, 200, 0.15) 42%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(0, 200, 255, 0.15) 58%,
+    rgba(0, 100, 255, 0.06) 70%,
+    transparent 80%
+  );
+  animation: preloader-shine-sweep 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes preloader-shine-sweep {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 180%;
+  }
+}
+
+/* Tagline */
+.preloader-tagline {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 4px;
+  color: rgba(0, 255, 170, 0.6);
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.4);
+}
+
+.preloader-tagline-text {
+  animation: preloader-text-flicker 3s ease-in-out infinite;
+}
+
+@keyframes preloader-text-flicker {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.preloader-dots span {
+  animation: preloader-dot-bounce 1.4s ease-in-out infinite;
+  display: inline-block;
+}
+
+.preloader-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.preloader-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes preloader-dot-bounce {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+
+/* Progress bar */
+.preloader-progress-track {
+  width: 240px;
+  height: 3px;
+  background: rgba(0, 255, 136, 0.08);
+  border-radius: 4px;
+  overflow: visible;
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.preloader-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #00ff88, #00ccff, #0088ff);
+  box-shadow:
+    0 0 8px rgba(0, 255, 136, 0.6),
+    0 0 20px rgba(0, 200, 255, 0.3);
+  transition: width 0.1s linear;
+}
+
+.preloader-progress-glow {
+  position: absolute;
+  top: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 255, 200, 0.9) 0%, transparent 70%);
+  transform: translateX(-50%);
+  transition: left 0.1s linear;
+  pointer-events: none;
+  filter: blur(2px);
+}
+
+.preloader-percent {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: rgba(0, 255, 170, 0.4);
+  letter-spacing: 2px;
+}
+
+/* Fade out */
+.preloader-fade-out {
+  pointer-events: none;
 }
