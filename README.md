@@ -1,73 +1,179 @@
-# Welcome to your Lovable project
+# cyberx-project
 
-## Project info
+`cyberx-project` is a Vite + React + TypeScript frontend for the Cyberspace-X 2.0 security platform. It uses Supabase for authentication, profile data, activity logging, and repository-style hub features.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Tech Stack
 
-## How can I edit this code?
+- Vite
+- React 18
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Supabase
 
-There are several ways of editing your application.
+## Prerequisites
 
-**Use Lovable**
+Install these before starting:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- Node.js 18 or later
+- npm 9 or later
+- Git
+- Supabase CLI (optional, only needed if you want to run the backend locally or apply migrations to your own Supabase project)
 
-Changes made via Lovable will be committed automatically to this repo.
+## Step-by-Step Installation
 
-**Use your preferred IDE**
+### 1. Clone the repository
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+```bash
+git clone https://github.com/itzTron/cyberx-project.git
+cd cyberx-project
+```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### 2. Install project dependencies
 
-Follow these steps:
+```bash
+npm install
+```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### 3. Create your environment file
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Copy the example file and create a local `.env`:
 
-# Step 3: Install the necessary dependencies.
-npm i
+```bash
+cp .env.example .env
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+If you are on Windows PowerShell, use:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+### 4. Configure Supabase environment variables
+
+Open `.env` and set the frontend variables:
+
+```env
+VITE_SUPABASE_PROJECT_ID=your_project_id
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+Notes:
+
+- `VITE_SUPABASE_URL` can be used on its own.
+- If `VITE_SUPABASE_URL` is omitted, the app builds the URL from `VITE_SUPABASE_PROJECT_ID`.
+- The app will not start correctly for auth and dashboard features until `VITE_SUPABASE_ANON_KEY` is set.
+
+### 5. Apply the database schema
+
+This project depends on the SQL migrations inside [`supabase/migrations`](./supabase/migrations). You have two setup options.
+
+#### Option A: Use an existing hosted Supabase project
+
+1. Create a Supabase project in the Supabase dashboard.
+2. Add the values from that project to `.env`.
+3. Apply the SQL in `supabase/migrations` to your project.
+
+If you want to use the CLI for that:
+
+```bash
+supabase login
+supabase link --project-ref your_project_id
+supabase db push
+```
+
+#### Option B: Run Supabase locally
+
+1. Install Docker Desktop and the Supabase CLI.
+2. Start the local stack:
+
+```bash
+supabase start
+```
+
+3. Get the local API URL and anon key:
+
+```bash
+supabase status
+```
+
+4. Update `.env` with the local values returned by the CLI.
+5. If needed, apply migrations:
+
+```bash
+supabase db reset
+```
+
+### 6. Start the development server
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Open the local app at:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```text
+http://localhost:5173
+```
 
-**Use GitHub Codespaces**
+### 7. Verify the setup
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+After the app starts:
 
-## What technologies are used for this project?
+1. Open the homepage in your browser.
+2. Go to `/signup` and create a test account.
+3. Confirm that sign-in, profile, and dashboard pages load without Supabase configuration errors.
 
-This project is built with:
+## Useful Scripts
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```bash
+npm run dev
+npm run build
+npm run preview
+npm run lint
+npm run sonar:check
+npm run sonar:scan
+```
 
-## How can I deploy this project?
+## Project Structure
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```text
+.
+|-- public/
+|-- scripts/
+|-- src/
+|-- supabase/
+|   |-- config.toml
+|   `-- migrations/
+|-- .env.example
+|-- package.json
+`-- vite.config.ts
+```
 
-## Can I connect a custom domain to my Lovable project?
+## Troubleshooting
 
-Yes, you can!
+### Supabase is not configured
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+If you see an error about Supabase not being configured, check that:
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- `.env` exists in the project root
+- `VITE_SUPABASE_ANON_KEY` is set
+- `VITE_SUPABASE_URL` or `VITE_SUPABASE_PROJECT_ID` is set
+- you restarted `npm run dev` after editing `.env`
+
+### Migrations fail locally
+
+If `supabase db push` or `supabase db reset` fails:
+
+- make sure Docker is running
+- make sure the Supabase CLI is installed and updated
+- check whether your local stack is already running with `supabase status`
+
+## Build for Production
+
+```bash
+npm run build
+```
+
+The production-ready frontend output is generated in `dist/`.
