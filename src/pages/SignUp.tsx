@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, LoaderCircle, ShieldPlus, UserPlus } from 'lucide-react';
+import { Check, Eye, EyeOff, LoaderCircle, ShieldPlus, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ const SignUp = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [formError, setFormError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{
     name?: string;
     email?: string;
@@ -50,10 +51,16 @@ const SignUp = () => {
       nextFieldErrors.email = normalizedEmailResult.message;
     }
 
+    const hasLetter = /[a-zA-Z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
     if (!password) {
       nextFieldErrors.password = 'Password is required.';
     } else if (password.length < 8) {
       nextFieldErrors.password = 'Password must be at least 8 characters long.';
+    } else if (!hasLetter || !hasNumber || !hasSpecialChar) {
+      nextFieldErrors.password = 'Password must contain letters, numbers, and a special character.';
     }
 
     setFieldErrors(nextFieldErrors);
@@ -210,22 +217,51 @@ const SignUp = () => {
                   <label htmlFor="signup-password" className="block text-sm font-medium text-foreground mb-2">
                     Password
                   </label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    value={password}
-                    onChange={(event) => {
-                      setPassword(event.target.value);
-                      setFieldErrors((current) => ({ ...current, password: undefined }));
-                    }}
-                    placeholder="Create a password"
-                    autoComplete="new-password"
-                    aria-invalid={Boolean(fieldErrors.password)}
-                    className={cn(
-                      'bg-muted/50 border-border',
-                      fieldErrors.password && 'border-destructive focus-visible:ring-destructive/40',
-                    )}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="signup-password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setFieldErrors((current) => ({ ...current, password: undefined }));
+                      }}
+                      placeholder="Create a password"
+                      autoComplete="new-password"
+                      aria-invalid={Boolean(fieldErrors.password)}
+                      className={cn(
+                        'bg-muted/50 border-border pr-10',
+                        fieldErrors.password && 'border-destructive focus-visible:ring-destructive/40',
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {password.length > 0 && (
+                    <div className="mt-3 space-y-1.5 text-xs">
+                      <div className={cn("flex items-center gap-1.5", password.length >= 8 ? "text-primary" : "text-muted-foreground")}>
+                        <Check className={cn("w-3 h-3", password.length >= 8 ? "opacity-100" : "opacity-50")} />
+                        At least 8 characters
+                      </div>
+                      <div className={cn("flex items-center gap-1.5", /[a-zA-Z]/.test(password) ? "text-primary" : "text-muted-foreground")}>
+                        <Check className={cn("w-3 h-3", /[a-zA-Z]/.test(password) ? "opacity-100" : "opacity-50")} />
+                        Contains a letter
+                      </div>
+                      <div className={cn("flex items-center gap-1.5", /\d/.test(password) ? "text-primary" : "text-muted-foreground")}>
+                        <Check className={cn("w-3 h-3", /\d/.test(password) ? "opacity-100" : "opacity-50")} />
+                        Contains a number
+                      </div>
+                      <div className={cn("flex items-center gap-1.5", /[!@#$%^&*(),.?":{}|<>]/.test(password) ? "text-primary" : "text-muted-foreground")}>
+                        <Check className={cn("w-3 h-3", /[!@#$%^&*(),.?":{}|<>]/.test(password) ? "opacity-100" : "opacity-50")} />
+                        Contains a special character
+                      </div>
+                    </div>
+                  )}
                   {fieldErrors.password && <p className="mt-2 text-sm text-destructive">{fieldErrors.password}</p>}
                 </div>
 

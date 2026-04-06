@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Check, Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AuthApiError, signInUser } from '@/lib/authApi';
@@ -17,6 +17,7 @@ const SignIn = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [formError, setFormError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
@@ -179,22 +180,31 @@ const SignIn = () => {
                       Forgot password?
                     </Link>
                   </div>
-                  <Input
-                    id="signin-password"
-                    type="password"
-                    value={password}
-                    onChange={(event) => {
-                      setPassword(event.target.value);
-                      setFieldErrors((current) => ({ ...current, password: undefined }));
-                    }}
-                    placeholder="Enter your password"
-                    autoComplete="current-password"
-                    aria-invalid={Boolean(fieldErrors.password)}
-                    className={cn(
-                      'bg-muted/50 border-border',
-                      fieldErrors.password && 'border-destructive focus-visible:ring-destructive/40',
-                    )}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="signin-password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setFieldErrors((current) => ({ ...current, password: undefined }));
+                      }}
+                      placeholder="Enter your password"
+                      autoComplete="current-password"
+                      aria-invalid={Boolean(fieldErrors.password)}
+                      className={cn(
+                        'bg-muted/50 border-border pr-10',
+                        fieldErrors.password && 'border-destructive focus-visible:ring-destructive/40',
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                   {fieldErrors.password && <p className="mt-2 text-sm text-destructive">{fieldErrors.password}</p>}
                 </div>
 
