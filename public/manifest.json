@@ -1,0 +1,29 @@
+{
+  "name": "Cyberspace-X 2.0",
+  "short_name": "CyberX",
+  "description": "Advanced Cybersecurity Platform featuring the CyberX toolkit for network scanning, intrusion detection, and secure operations.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#040a14",
+  "theme_color": "#00e55a",
+  "icons": [
+    {
+      "src": "/cyberx.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/cyberx-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/cyberx-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
