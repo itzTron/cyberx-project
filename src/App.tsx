@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Preloader from "./components/Preloader";
 import NavigationProgress from "./components/NavigationProgress";
+import Navbar from "./components/Navbar";
 import Index from "./pages/Index";
 import Features from "./pages/Features";
 import Tools from "./pages/Tools";
@@ -40,6 +41,7 @@ const App = () => {
         {loading && <Preloader onComplete={handlePreloaderComplete} />}
         <BrowserRouter>
           <NavigationProgress />
+          <Navbar />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/features" element={<Features />} />

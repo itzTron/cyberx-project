@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Rocket, Wrench, Shield, ChevronRight } from 'lucide-react';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 import { tools } from '@/data/tools';
@@ -37,7 +37,7 @@ const docSections = [
 const Docs = () => {
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
       
       {/* Hero */}
       <section className="pt-32 pb-16 relative">

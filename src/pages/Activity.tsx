@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Clock3, RefreshCw } from 'lucide-react';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,7 +80,7 @@ const Activity = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-28 pb-16">
         <div className="container mx-auto px-4 max-w-4xl space-y-6">

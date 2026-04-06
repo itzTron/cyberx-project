@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { Link } from 'react-router-dom';
 import { Camera, LoaderCircle, Mail, Save, Trash2 } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -266,7 +266,7 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-28 pb-16">
         <div className="container mx-auto px-4 max-w-4xl space-y-6">

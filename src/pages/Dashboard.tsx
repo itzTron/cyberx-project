@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import Navbar from '@/components/Navbar';
+
 import GitHubReadme from '@/components/GitHubReadme';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -781,7 +781,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-28 pb-12">
         <div className="container mx-auto px-4">

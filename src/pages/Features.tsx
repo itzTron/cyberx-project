@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import SectionHeader from '@/components/SectionHeader';
 import ToolCard from '@/components/ToolCard';
@@ -33,7 +33,7 @@ const highlights = [
 const Features = () => {
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
       
       {/* Hero */}
       <section className="pt-32 pb-16 relative">

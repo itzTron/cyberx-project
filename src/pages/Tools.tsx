@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Download, FolderGit2 } from 'lucide-react';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import SectionHeader from '@/components/SectionHeader';
 import ToolCard from '@/components/ToolCard';
@@ -84,7 +84,7 @@ const Tools = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-32 pb-16 relative">
         <div className="hero-gradient absolute inset-0" />

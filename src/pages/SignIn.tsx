@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AuthApiError, signInUser } from '@/lib/authApi';
 import { cn } from '@/lib/utils';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 
@@ -86,7 +86,7 @@ const SignIn = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-32 pb-20 relative">
         <div className="hero-gradient absolute inset-0" />

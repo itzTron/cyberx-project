@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CheckCircle2, Download, ExternalLink, Lightbulb, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 import { getToolBySlug, tools } from '@/data/tools';
@@ -14,7 +14,7 @@ const ToolDetail = () => {
   if (!tool) {
     return (
       <div className="min-h-screen bg-background">
-        <Navbar />
+
         <div className="pt-32 pb-16 container mx-auto px-4 text-center">
           <h1 className="text-4xl font-bold text-foreground mb-4">Tool Not Found</h1>
           <Button asChild>
@@ -33,7 +33,7 @@ const ToolDetail = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-32 pb-16 relative">
         <div className="hero-gradient absolute inset-0" />

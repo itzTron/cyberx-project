@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { getSupportedEmailDomains, validateSignUpEmail } from '@/lib/emailValidation';
 import { AuthApiError, signUpUser } from '@/lib/authApi';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 
@@ -96,7 +96,7 @@ const SignUp = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-32 pb-20 relative">
         <div className="hero-gradient absolute inset-0" />

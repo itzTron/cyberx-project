@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, ChevronDown, Lock, Shield, Terminal, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import MatrixRain from '@/components/MatrixRain';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import SectionHeader from '@/components/SectionHeader';
 import ToolCard from '@/components/ToolCard';
@@ -57,7 +57,7 @@ const Index = () => {
       <MatrixRain />
       <div className="matrix-scanline fixed inset-0 pointer-events-none z-10" />
 
-      <Navbar />
+
 
       <section className="relative min-h-screen flex items-center justify-center pt-16">
         <div className="hero-gradient absolute inset-0" />

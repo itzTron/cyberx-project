@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import GlassCard from '@/components/GlassCard';
-import Navbar from '@/components/Navbar';
+
 import Footer from '@/components/Footer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import SectionHeader from '@/components/SectionHeader';
@@ -65,7 +65,7 @@ const Download = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
+
 
       <section className="pt-32 pb-16 relative">
         <div className="hero-gradient absolute inset-0" />
