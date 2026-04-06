@@ -51,6 +51,10 @@
     @apply border-border;
   }
 
+  html {
+    overflow-y: scroll;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', sans-serif;
