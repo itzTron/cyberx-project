@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Archive,
@@ -8,11 +8,17 @@ import {
   Ellipsis,
   Eye,
   EyeOff,
+  ExternalLink,
   FileCode2,
   FolderGit2,
+  Github,
   GitCommitHorizontal,
+  Globe,
+  Linkedin,
   LogOut,
+  MapPin,
   Pencil,
+  Phone,
   PlusCircle,
   RefreshCw,
   Rocket,
@@ -24,6 +30,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 import GitHubReadme from '@/components/GitHubReadme';
 import Footer from '@/components/Footer';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -194,8 +201,19 @@ const collectReadmeAssetSources = (markdown: string) => {
 
 const getRepoFileCacheKey = (repoId: string, filePath: string) => `${repoId}::${normalizeRepoPath(filePath)}`;
 
+const dashboardTabs = new Set(['overview', 'create', 'upload', 'viewer', 'profile']);
+
+const getInitials = (name: string) =>
+  name
+    .split(' ')
+    .map((part) => part.trim()[0] || '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
 const Dashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { username: routeUsername } = useParams<{ username?: string }>();
   const lastRepoLoadRef = useRef(0);
   const [activeTab, setActiveTab] = useState('overview');
@@ -255,6 +273,31 @@ const Dashboard = () => {
   );
 
   const selectedRepository = repositories.find((repository) => repository.id === selectedRepoId) || null;
+
+  useEffect(() => {
+    const tabParam = new URLSearchParams(location.search).get('tab');
+    if (!tabParam || !dashboardTabs.has(tabParam) || tabParam === activeTab) {
+      return;
+    }
+
+    setActiveTab(tabParam);
+  }, [activeTab, location.search]);
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+
+    if (location.pathname !== '/repository') {
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('tab') === value) {
+      return;
+    }
+
+    params.set('tab', value);
+    navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true });
+  };
 
   const refreshActivity = async () => {
     try {
@@ -828,11 +871,93 @@ const Dashboard = () => {
             {!isBootstrapping && !bootstrapError && user && (
               <>
                 <Card className="border-primary/30">
-                  <CardContent className="pt-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="text-lg font-semibold text-foreground">{user.fullName}</p>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
-                      <p className="text-xs text-primary mt-1">{`http://localhost:8080/${user.username}`}</p>
+                  <CardContent className="pt-6 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+                      <div className="flex h-28 w-28 items-center justify-center rounded-full border-2 border-primary/40 bg-background p-1 self-center lg:self-start">
+                        <Avatar className="h-full w-full">
+                          <AvatarImage src={user.avatarUrl || undefined} alt={user.fullName || user.username} />
+                          <AvatarFallback>{getInitials(user.fullName || user.username)}</AvatarFallback>
+                        </Avatar>
+                      </div>
+
+                      <div className="space-y-3 text-center lg:text-left">
+                        <div>
+                          <p className="text-2xl font-semibold text-foreground">{user.fullName}</p>
+                          <p className="text-sm text-muted-foreground">@{user.username}</p>
+                        </div>
+                        <p className="max-w-2xl text-sm text-muted-foreground">
+                          {user.bio.trim() || 'Add a bio from Edit Profile to introduce yourself here.'}
+                        </p>
+                        <div className="flex flex-wrap gap-4 justify-center lg:justify-start text-sm text-muted-foreground">
+                          {user.phoneNumber && (
+                            <a href={`tel:${user.phoneNumber}`} className="inline-flex items-center gap-2 hover:text-foreground transition-colors">
+                              <Phone className="h-4 w-4 text-primary" />
+                              {user.phoneNumber}
+                            </a>
+                          )}
+                          {user.address && (
+                            <span className="inline-flex items-center gap-2">
+                              <MapPin className="h-4 w-4 text-primary" />
+                              {user.address}
+                            </span>
+                          )}
+                          {typeof user.locationLat === 'number' && typeof user.locationLng === 'number' && (
+                            <a
+                              href={`https://www.google.com/maps?q=${user.locationLat},${user.locationLng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 hover:text-foreground transition-colors"
+                            >
+                              <MapPin className="h-4 w-4 text-primary" />
+                              {user.locationLat.toFixed(6)}, {user.locationLng.toFixed(6)}
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
+                          {user.linkedinUrl && (
+                            <a
+                              href={user.linkedinUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                            >
+                              <Linkedin className="h-4 w-4" />
+                              LinkedIn
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                          {user.githubUrl && (
+                            <a
+                              href={user.githubUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                            >
+                              <Github className="h-4 w-4" />
+                              GitHub
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                          {user.websiteUrl && (
+                            <a
+                              href={user.websiteUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                            >
+                              <Globe className="h-4 w-4" />
+                              Website
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
+                          <Button asChild variant="outline">
+                            <Link to="/profile">Edit Profile</Link>
+                          </Button>
+                          <p className="text-xs text-primary self-center">{`http://localhost:8080/${user.username}`}</p>
+                        </div>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div className="rounded-md border border-border px-3 py-2">
@@ -847,7 +972,7 @@ const Dashboard = () => {
                   </CardContent>
                 </Card>
 
-                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <Tabs value={activeTab} onValueChange={handleTabChange}>
                   <TabsList className="flex flex-wrap h-auto gap-2 bg-transparent p-0">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="create">New Repository</TabsTrigger>

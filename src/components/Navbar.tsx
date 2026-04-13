@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Clock3, LayoutDashboard, LogOut, Menu, Repeat, User, UserPlus, X } from 'lucide-react';
+import { ChevronDown, Clock3, FileCode2, FolderGit2, LogOut, Menu, PlusCircle, Repeat, Upload, User, UserPlus, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { getCurrentUserProfile, signOutDashboardUser, type HubUserProfile } from '@/lib/hubApi';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
@@ -22,6 +31,7 @@ const reservedTopLevelRoutes = new Set([
   'features',
   'tools',
   'dashboard',
+  'repository',
   'profile',
   'activity',
   'download',
@@ -58,7 +68,13 @@ const Navbar = () => {
       }
 
       if (href === '/dashboard') {
-        return location.pathname === '/dashboard' || location.pathname === '/profile' || location.pathname === '/activity' || isUsernameRoute;
+        return (
+          location.pathname === '/dashboard' ||
+          location.pathname === '/repository' ||
+          location.pathname === '/profile' ||
+          location.pathname === '/activity' ||
+          isUsernameRoute
+        );
       }
 
       return location.pathname === href;
@@ -206,12 +222,38 @@ const Navbar = () => {
                       Your Profile
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link to="/dashboard" className="cursor-pointer">
-                      <LayoutDashboard className="mr-2 h-4 w-4" />
-                      Dashboard
-                    </Link>
-                  </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <FolderGit2 className="mr-2 h-4 w-4" />
+                      Repository
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-56">
+                      <DropdownMenuItem asChild>
+                        <Link to="/repository?tab=overview" className="cursor-pointer">
+                          <FolderGit2 className="mr-2 h-4 w-4" />
+                          View Repositories
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/repository?tab=create" className="cursor-pointer">
+                          <PlusCircle className="mr-2 h-4 w-4" />
+                          Add Repository
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/repository?tab=upload" className="cursor-pointer">
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload Code
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/repository?tab=viewer" className="cursor-pointer">
+                          <FileCode2 className="mr-2 h-4 w-4" />
+                          Show Code
+                        </Link>
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                   <DropdownMenuItem asChild>
                     <Link to="/profile" className="cursor-pointer">
                       <User className="mr-2 h-4 w-4" />
@@ -324,6 +366,11 @@ const Navbar = () => {
                     <Button asChild variant="outline">
                       <Link to={`/${currentUser.username}`} onClick={() => setIsOpen(false)}>
                         Your Profile
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link to="/repository?tab=overview" onClick={() => setIsOpen(false)}>
+                        Repository
                       </Link>
                     </Button>
                     <Button asChild variant="outline">

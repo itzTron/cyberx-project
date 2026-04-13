@@ -51,6 +51,13 @@ export type HubUserProfile = {
   profileReadme: string;
   bio: string;
   phoneNumber: string;
+  address: string;
+  linkedinUrl: string;
+  githubUrl: string;
+  websiteUrl: string;
+  locationLabel: string;
+  locationLat: number | null;
+  locationLng: number | null;
   avatarUrl: string;
 };
 
@@ -61,6 +68,14 @@ export type DashboardBootstrap = {
     fullName: string;
     username: string;
     bio: string;
+    phoneNumber: string;
+    address: string;
+    linkedinUrl: string;
+    githubUrl: string;
+    websiteUrl: string;
+    locationLabel: string;
+    locationLat: number | null;
+    locationLng: number | null;
     avatarUrl: string;
   };
   profileReadme: string;
@@ -83,11 +98,16 @@ export type UploadRepositoryFilesInput = {
 
 const MAX_FILES_PER_UPLOAD = 30;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
-const PROFILE_SELECT_COLUMNS = 'id, email, full_name, username, profile_readme, bio, phone_number, avatar_url';
+const PROFILE_SELECT_COLUMNS_BASE = 'id, email, full_name, username, profile_readme, bio, phone_number, avatar_url';
+const PROFILE_SELECT_COLUMNS_WITH_SOCIAL = `${PROFILE_SELECT_COLUMNS_BASE}, address, linkedin_url, github_url, website_url`;
+const PROFILE_SELECT_COLUMNS_WITH_LOCATION = `${PROFILE_SELECT_COLUMNS_BASE}, location_label, location_lat, location_lng`;
+const PROFILE_SELECT_COLUMNS_WITH_SOCIAL_AND_LOCATION = `${PROFILE_SELECT_COLUMNS_WITH_SOCIAL}, location_label, location_lat, location_lng`;
 const REPOSITORY_SELECT_COLUMNS_BASE = 'id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at';
 const REPOSITORY_SELECT_COLUMNS_WITH_TOOL_LIST = `${REPOSITORY_SELECT_COLUMNS_BASE}, show_in_tool_list`;
 const DEFAULT_PROFILE_REPOSITORY_DESCRIPTION = 'Default profile repository for dashboard README.';
 let repositoriesHasToolListColumnCache: boolean | null = null;
+let profileHasSocialColumnsCache: boolean | null = null;
+let profileHasLocationColumnsCache: boolean | null = null;
 
 const extensionLanguageMap: Record<string, string> = {
   ts: 'typescript',
@@ -274,6 +294,66 @@ const getRepositorySelectColumns = async (supabase: any) => {
   return hasToolListColumn ? REPOSITORY_SELECT_COLUMNS_WITH_TOOL_LIST : REPOSITORY_SELECT_COLUMNS_BASE;
 };
 
+const hasProfileSocialColumns = async (supabase: any, forceRefresh = false) => {
+  if (!forceRefresh && profileHasSocialColumnsCache !== null) {
+    return profileHasSocialColumnsCache;
+  }
+
+  const { error } = await supabase.from('user_profiles').select('address' as any).limit(1);
+  if (error) {
+    if (isMissingColumnError(error, 'address')) {
+      profileHasSocialColumnsCache = false;
+      return false;
+    }
+
+    throw new Error(error.message);
+  }
+
+  profileHasSocialColumnsCache = true;
+  return true;
+};
+
+const hasProfileLocationColumns = async (supabase: any, forceRefresh = false) => {
+  if (!forceRefresh && profileHasLocationColumnsCache !== null) {
+    return profileHasLocationColumnsCache;
+  }
+
+  const { error } = await supabase.from('user_profiles').select('location_lat' as any).limit(1);
+  if (error) {
+    if (isMissingColumnError(error, 'location_lat')) {
+      profileHasLocationColumnsCache = false;
+      return false;
+    }
+
+    throw new Error(error.message);
+  }
+
+  profileHasLocationColumnsCache = true;
+  return true;
+};
+
+const getProfileSelectColumns = ({
+  hasSocialColumns,
+  hasLocationColumns,
+}: {
+  hasSocialColumns: boolean;
+  hasLocationColumns: boolean;
+}) => {
+  if (hasSocialColumns && hasLocationColumns) {
+    return PROFILE_SELECT_COLUMNS_WITH_SOCIAL_AND_LOCATION;
+  }
+
+  if (hasSocialColumns) {
+    return PROFILE_SELECT_COLUMNS_WITH_SOCIAL;
+  }
+
+  if (hasLocationColumns) {
+    return PROFILE_SELECT_COLUMNS_WITH_LOCATION;
+  }
+
+  return PROFILE_SELECT_COLUMNS_BASE;
+};
+
 const mapRepositoryRecord = (record: any): HubRepository => ({
   ...(record || {}),
   show_in_tool_list: Boolean(record?.show_in_tool_list),
@@ -316,6 +396,100 @@ const pushActivity = async ({
   }
 };
 
+type LocalProfileExtras = {
+  address: string;
+  linkedinUrl: string;
+  githubUrl: string;
+  websiteUrl: string;
+  locationLabel: string;
+  locationLat: number | null;
+  locationLng: number | null;
+};
+
+const LOCAL_PROFILE_EXTRAS_KEY_PREFIX = 'cyberx_profile_extras_';
+
+const readLocalProfileExtras = (userId: string): LocalProfileExtras => {
+  if (typeof window === 'undefined') {
+    return {
+      address: '',
+      linkedinUrl: '',
+      githubUrl: '',
+      websiteUrl: '',
+      locationLabel: '',
+      locationLat: null,
+      locationLng: null,
+    };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(`${LOCAL_PROFILE_EXTRAS_KEY_PREFIX}${userId}`);
+    if (!raw) {
+      return {
+        address: '',
+        linkedinUrl: '',
+        githubUrl: '',
+        websiteUrl: '',
+        locationLabel: '',
+        locationLat: null,
+        locationLng: null,
+      };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<LocalProfileExtras>;
+    return {
+      address: typeof parsed.address === 'string' ? parsed.address : '',
+      linkedinUrl: typeof parsed.linkedinUrl === 'string' ? parsed.linkedinUrl : '',
+      githubUrl: typeof parsed.githubUrl === 'string' ? parsed.githubUrl : '',
+      websiteUrl: typeof parsed.websiteUrl === 'string' ? parsed.websiteUrl : '',
+      locationLabel: typeof parsed.locationLabel === 'string' ? parsed.locationLabel : '',
+      locationLat: typeof parsed.locationLat === 'number' && Number.isFinite(parsed.locationLat) ? parsed.locationLat : null,
+      locationLng: typeof parsed.locationLng === 'number' && Number.isFinite(parsed.locationLng) ? parsed.locationLng : null,
+    };
+  } catch {
+    return {
+      address: '',
+      linkedinUrl: '',
+      githubUrl: '',
+      websiteUrl: '',
+      locationLabel: '',
+      locationLat: null,
+      locationLng: null,
+    };
+  }
+};
+
+const writeLocalProfileExtras = (userId: string, extras: LocalProfileExtras) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(`${LOCAL_PROFILE_EXTRAS_KEY_PREFIX}${userId}`, JSON.stringify(extras));
+  } catch {
+    // ignore localStorage write failures
+  }
+};
+
+const mergeProfileExtras = ({
+  userId,
+  profile,
+}: {
+  userId: string;
+  profile: HubUserProfile;
+}): HubUserProfile => {
+  const local = readLocalProfileExtras(userId);
+  return {
+    ...profile,
+    address: profile.address || local.address,
+    linkedinUrl: profile.linkedinUrl || local.linkedinUrl,
+    githubUrl: profile.githubUrl || local.githubUrl,
+    websiteUrl: profile.websiteUrl || local.websiteUrl,
+    locationLabel: profile.locationLabel || local.locationLabel,
+    locationLat: profile.locationLat ?? local.locationLat,
+    locationLng: profile.locationLng ?? local.locationLng,
+  };
+};
+
 const mapProfileRecord = ({
   profile,
   fallbackEmail,
@@ -329,6 +503,13 @@ const mapProfileRecord = ({
     profile_readme: string | null;
     bio: string | null;
     phone_number: string | null;
+    address?: string | null;
+    linkedin_url?: string | null;
+    github_url?: string | null;
+    website_url?: string | null;
+    location_label?: string | null;
+    location_lat?: number | null;
+    location_lng?: number | null;
     avatar_url: string | null;
   };
   fallbackEmail: string;
@@ -341,8 +522,30 @@ const mapProfileRecord = ({
   profileReadme: profile.profile_readme || '',
   bio: profile.bio || '',
   phoneNumber: profile.phone_number || '',
+  address: profile.address || '',
+  linkedinUrl: profile.linkedin_url || '',
+  githubUrl: profile.github_url || '',
+  websiteUrl: profile.website_url || '',
+  locationLabel: profile.location_label || '',
+  locationLat: typeof profile.location_lat === 'number' ? profile.location_lat : null,
+  locationLng: typeof profile.location_lng === 'number' ? profile.location_lng : null,
   avatarUrl: profile.avatar_url || '',
 });
+
+const normalizeOptionalUrl = (value: string, label: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    return new URL(withProtocol).toString();
+  } catch {
+    throw new Error(`Enter a valid ${label} URL.`);
+  }
+};
 
 const ensureProfileRow = async ({
   userId,
@@ -354,9 +557,17 @@ const ensureProfileRow = async ({
   fullName: string;
 }) => {
   const supabase = getSupabaseClient();
+  const [hasSocialColumns, hasLocationColumns] = await Promise.all([
+    hasProfileSocialColumns(supabase),
+    hasProfileLocationColumns(supabase),
+  ]);
+  const profileSelectColumns = getProfileSelectColumns({
+    hasSocialColumns,
+    hasLocationColumns,
+  });
   const { data, error } = await supabase
     .from('user_profiles')
-    .select(PROFILE_SELECT_COLUMNS)
+    .select(profileSelectColumns as any)
     .eq('id', userId)
     .maybeSingle();
 
@@ -378,7 +589,7 @@ const ensureProfileRow = async ({
           username: fallbackUsername,
         })
         .eq('id', userId)
-        .select(PROFILE_SELECT_COLUMNS)
+        .select(profileSelectColumns as any)
         .single();
 
       if (!updateError && updated) {
@@ -395,36 +606,70 @@ const ensureProfileRow = async ({
     userId,
   });
 
+  const profileInsertDefaults = {
+    id: userId,
+    email: email.toLowerCase().trim(),
+    full_name: fullName,
+    username: initialUsername,
+    profile_readme: '',
+    bio: '',
+    phone_number: '',
+    avatar_url: '',
+    ...(hasSocialColumns
+      ? {
+          address: '',
+          linkedin_url: '',
+          github_url: '',
+          website_url: '',
+        }
+      : {}),
+    ...(hasLocationColumns
+      ? {
+          location_label: '',
+          location_lat: null,
+          location_lng: null,
+        }
+      : {}),
+  };
+
   const { data: inserted, error: insertError } = await supabase
     .from('user_profiles')
-    .insert({
-      id: userId,
-      email: email.toLowerCase().trim(),
-      full_name: fullName,
-      username: initialUsername,
-      profile_readme: '',
-      bio: '',
-      phone_number: '',
-      avatar_url: '',
-    })
-    .select(PROFILE_SELECT_COLUMNS)
+    .insert(profileInsertDefaults)
+    .select(profileSelectColumns as any)
     .single();
 
   if (insertError && insertError.code === '23505') {
     const fallbackUsername = `${initialUsername}-${userId.slice(0, 6).toLowerCase()}`;
+    const fallbackInsertDefaults = {
+      id: userId,
+      email: email.toLowerCase().trim(),
+      full_name: fullName,
+      username: fallbackUsername,
+      profile_readme: '',
+      bio: '',
+      phone_number: '',
+      avatar_url: '',
+      ...(hasSocialColumns
+        ? {
+            address: '',
+            linkedin_url: '',
+            github_url: '',
+            website_url: '',
+          }
+        : {}),
+      ...(hasLocationColumns
+        ? {
+            location_label: '',
+            location_lat: null,
+            location_lng: null,
+          }
+        : {}),
+    };
+
     const { data: fallbackInserted, error: fallbackError } = await supabase
       .from('user_profiles')
-      .insert({
-        id: userId,
-        email: email.toLowerCase().trim(),
-        full_name: fullName,
-        username: fallbackUsername,
-        profile_readme: '',
-        bio: '',
-        phone_number: '',
-        avatar_url: '',
-      })
-      .select(PROFILE_SELECT_COLUMNS)
+      .insert(fallbackInsertDefaults)
+      .select(profileSelectColumns as any)
       .single();
 
     if (fallbackError) {
@@ -808,14 +1053,31 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
     throw new Error(activityError.message);
   }
 
+  const mergedProfile = mergeProfileExtras({
+    userId: user.id,
+    profile: mapProfileRecord({
+      profile,
+      fallbackEmail: user.email || '',
+      fallbackName: fullName,
+    }),
+  });
+
   return {
     user: {
       id: user.id,
-      email: user.email || '',
-      fullName: profile.full_name || fullName,
+      email: mergedProfile.email,
+      fullName: mergedProfile.fullName,
       username: resolvedUsername,
-      bio: profile.bio || '',
-      avatarUrl: profile.avatar_url || '',
+      bio: mergedProfile.bio,
+      phoneNumber: mergedProfile.phoneNumber,
+      address: mergedProfile.address,
+      linkedinUrl: mergedProfile.linkedinUrl,
+      githubUrl: mergedProfile.githubUrl,
+      websiteUrl: mergedProfile.websiteUrl,
+      locationLabel: mergedProfile.locationLabel,
+      locationLat: mergedProfile.locationLat,
+      locationLng: mergedProfile.locationLng,
+      avatarUrl: mergedProfile.avatarUrl,
     },
     profileReadme: resolvedProfileReadme,
     repositories: mapRepositoryList(repositories),
@@ -844,10 +1106,13 @@ export const getCurrentUserProfile = async (): Promise<HubUserProfile> => {
     fullName,
   });
 
-  return mapProfileRecord({
-    profile,
-    fallbackEmail: user.email || '',
-    fallbackName: fullName,
+  return mergeProfileExtras({
+    userId: user.id,
+    profile: mapProfileRecord({
+      profile,
+      fallbackEmail: user.email || '',
+      fallbackName: fullName,
+    }),
   });
 };
 
@@ -855,17 +1120,51 @@ export const updateCurrentUserProfile = async ({
   fullName,
   bio,
   phoneNumber,
+  address,
+  linkedinUrl,
+  githubUrl,
+  websiteUrl,
+  locationLabel,
+  locationLat,
+  locationLng,
   avatarUrl,
 }: {
   fullName: string;
   bio: string;
   phoneNumber: string;
+  address: string;
+  linkedinUrl: string;
+  githubUrl: string;
+  websiteUrl: string;
+  locationLabel: string;
+  locationLat: number | null;
+  locationLng: number | null;
   avatarUrl: string;
 }): Promise<HubUserProfile> => {
   const { supabase, user } = await ensureAuthenticatedUser();
+  const [hasSocialColumns, hasLocationColumns] = await Promise.all([
+    hasProfileSocialColumns(supabase, true),
+    hasProfileLocationColumns(supabase, true),
+  ]);
+  const profileSelectColumns = getProfileSelectColumns({
+    hasSocialColumns,
+    hasLocationColumns,
+  });
   const nextFullName = fullName.trim();
   const nextBio = bio.trim();
   const nextPhoneNumber = phoneNumber.trim();
+  const nextAddress = address.trim();
+  const nextLinkedinUrl = normalizeOptionalUrl(linkedinUrl, 'LinkedIn');
+  const nextGithubUrl = normalizeOptionalUrl(githubUrl, 'GitHub');
+  const nextWebsiteUrl = normalizeOptionalUrl(websiteUrl, 'website');
+  const nextLocationLabel = locationLabel.trim();
+  const hasValidCoordinates =
+    typeof locationLat === 'number' &&
+    typeof locationLng === 'number' &&
+    Number.isFinite(locationLat) &&
+    Number.isFinite(locationLng);
+  const nextLocationLat = hasValidCoordinates ? locationLat : null;
+  const nextLocationLng = hasValidCoordinates ? locationLng : null;
   const nextAvatarUrl = avatarUrl.trim();
 
   if (!nextFullName) {
@@ -882,10 +1181,25 @@ export const updateCurrentUserProfile = async ({
       full_name: nextFullName,
       bio: nextBio,
       phone_number: nextPhoneNumber,
+      ...(hasSocialColumns
+        ? {
+            address: nextAddress,
+            linkedin_url: nextLinkedinUrl,
+            github_url: nextGithubUrl,
+            website_url: nextWebsiteUrl,
+          }
+        : {}),
+      ...(hasLocationColumns
+        ? {
+            location_label: nextLocationLabel,
+            location_lat: nextLocationLat,
+            location_lng: nextLocationLng,
+          }
+        : {}),
       avatar_url: nextAvatarUrl,
     })
     .eq('id', user.id)
-    .select(PROFILE_SELECT_COLUMNS)
+    .select(profileSelectColumns as any)
     .single();
 
   if (error || !data) {
@@ -909,14 +1223,33 @@ export const updateCurrentUserProfile = async ({
     context: {
       has_bio: Boolean(nextBio),
       has_phone: Boolean(nextPhoneNumber),
+      has_address: hasSocialColumns ? Boolean(nextAddress) : false,
+      has_linkedin: hasSocialColumns ? Boolean(nextLinkedinUrl) : false,
+      has_github: hasSocialColumns ? Boolean(nextGithubUrl) : false,
+      has_website: hasSocialColumns ? Boolean(nextWebsiteUrl) : false,
+      has_location: hasLocationColumns ? Boolean(nextLocationLat !== null && nextLocationLng !== null) : false,
       has_avatar: Boolean(nextAvatarUrl),
     },
   });
 
-  return mapProfileRecord({
-    profile: data,
-    fallbackEmail: user.email || '',
-    fallbackName: nextFullName,
+  const localExtras: LocalProfileExtras = {
+    address: nextAddress,
+    linkedinUrl: nextLinkedinUrl,
+    githubUrl: nextGithubUrl,
+    websiteUrl: nextWebsiteUrl,
+    locationLabel: nextLocationLabel,
+    locationLat: nextLocationLat,
+    locationLng: nextLocationLng,
+  };
+  writeLocalProfileExtras(user.id, localExtras);
+
+  return mergeProfileExtras({
+    userId: user.id,
+    profile: mapProfileRecord({
+      profile: data,
+      fallbackEmail: user.email || '',
+      fallbackName: nextFullName,
+    }),
   });
 };
 
@@ -1684,4 +2017,3 @@ export const signOutDashboardUser = async () => {
     throw new Error(error.message);
   }
 };
-

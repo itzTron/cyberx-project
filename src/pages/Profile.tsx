@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, LoaderCircle, Mail, Save, Trash2 } from 'lucide-react';
+import { Camera, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Mail, MapPin, Phone, Save, Search, Trash2 } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
 
 import Footer from '@/components/Footer';
@@ -24,8 +24,11 @@ import {
   updateCurrentUserProfile,
   type HubUserProfile,
 } from '@/lib/hubApi';
+import { loadGoogleMapsApi } from '@/lib/googleMaps';
 
 const MAX_AVATAR_BYTES = 1_500_000;
+const DEFAULT_MAP_CENTER = { lat: 20.5937, lng: 78.9629 };
+type GeocodeResult = { lat: number; lng: number; label: string };
 
 const getInitials = (name: string) =>
   name
@@ -34,6 +37,15 @@ const getInitials = (name: string) =>
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+const normalizePreviewUrl = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+};
 
 const readFileAsDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -92,7 +104,19 @@ const Profile = () => {
   const [profile, setProfile] = useState<HubUserProfile | null>(null);
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [address, setAddress] = useState('');
   const [bio, setBio] = useState('');
+  const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [locationLabel, setLocationLabel] = useState('');
+  const [locationLat, setLocationLat] = useState<number | null>(null);
+  const [locationLng, setLocationLng] = useState<number | null>(null);
+  const [isMapDialogOpen, setIsMapDialogOpen] = useState(false);
+  const [mapSearchAddress, setMapSearchAddress] = useState('');
+  const [mapStatus, setMapStatus] = useState('');
+  const [isMapBusy, setIsMapBusy] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState('');
   const [savedAvatarUrl, setSavedAvatarUrl] = useState('');
   const [email, setEmail] = useState('');
@@ -107,13 +131,28 @@ const Profile = () => {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [isApplyingCrop, setIsApplyingCrop] = useState(false);
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const mapMarkerRef = useRef<any>(null);
+  const mapGeocoderRef = useRef<any>(null);
+  const mapClickListenerRef = useRef<any>(null);
+  const markerDragListenerRef = useRef<any>(null);
   const hasAvatarChanges = avatarUrl.trim() !== savedAvatarUrl.trim();
+  const googleMapsApiKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined)?.trim() || '';
 
   const syncForm = (data: HubUserProfile) => {
     setProfile(data);
     setFullName(data.fullName);
     setPhoneNumber(data.phoneNumber);
+    setAddress(data.address);
     setBio(data.bio);
+    setLinkedinUrl(data.linkedinUrl);
+    setGithubUrl(data.githubUrl);
+    setWebsiteUrl(data.websiteUrl);
+    setLocationLabel(data.locationLabel);
+    setLocationLat(data.locationLat);
+    setLocationLng(data.locationLng);
+    setMapSearchAddress(data.locationLabel || data.address);
     setAvatarUrl(data.avatarUrl);
     setSavedAvatarUrl(data.avatarUrl);
     setEmail(data.email);
@@ -226,6 +265,304 @@ const Profile = () => {
     }
   };
 
+  const updateSelectedLocation = ({
+    lat,
+    lng,
+    label,
+  }: {
+    lat: number;
+    lng: number;
+    label: string;
+  }) => {
+    setLocationLat(lat);
+    setLocationLng(lng);
+    if (label.trim()) {
+      setLocationLabel(label.trim());
+      setAddress(label.trim());
+      setMapSearchAddress(label.trim());
+    }
+  };
+
+  const ensureGeocoder = (google: any) => {
+    if (!mapGeocoderRef.current) {
+      mapGeocoderRef.current = new google.maps.Geocoder();
+    }
+
+    return mapGeocoderRef.current;
+  };
+
+  const geocodeAddress = (google: any, addressQuery: string) =>
+    new Promise<GeocodeResult>((resolve, reject) => {
+      const geocoder = ensureGeocoder(google);
+      geocoder.geocode({ address: addressQuery }, (results: any, status: string) => {
+        if (status === 'OK' && results?.[0]) {
+          const result = results[0];
+          resolve({
+            lat: result.geometry.location.lat(),
+            lng: result.geometry.location.lng(),
+            label: result.formatted_address || addressQuery,
+          });
+          return;
+        }
+
+        reject(new Error(status || 'Unable to geocode address.'));
+      });
+    });
+
+  const reverseGeocodePosition = (google: any, lat: number, lng: number) =>
+    new Promise<string>((resolve) => {
+      const geocoder = ensureGeocoder(google);
+      geocoder.geocode({ location: { lat, lng } }, (results: any, status: string) => {
+        if (status === 'OK' && results?.[0]?.formatted_address) {
+          resolve(results[0].formatted_address as string);
+          return;
+        }
+
+        resolve('');
+      });
+    });
+
+  const geocodeAddressWithFallback = async (addressQuery: string): Promise<GeocodeResult | null> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(addressQuery)}`,
+      );
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = (await response.json()) as Array<{
+        lat?: string;
+        lon?: string;
+        display_name?: string;
+      }>;
+      const match = data?.[0];
+      if (!match?.lat || !match?.lon) {
+        return null;
+      }
+
+      const lat = Number(match.lat);
+      const lng = Number(match.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return null;
+      }
+
+      return {
+        lat,
+        lng,
+        label: (match.display_name || addressQuery).trim(),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const reverseGeocodeWithFallback = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lng))}`,
+      );
+      if (!response.ok) {
+        return '';
+      }
+
+      const data = (await response.json()) as { display_name?: string };
+      return (data.display_name || '').trim();
+    } catch {
+      return '';
+    }
+  };
+
+  const setMarkerPosition = (google: any, lat: number, lng: number) => {
+    const position = new google.maps.LatLng(lat, lng);
+    if (!mapMarkerRef.current) {
+      mapMarkerRef.current = new google.maps.Marker({
+        map: mapInstanceRef.current,
+        position,
+        draggable: true,
+      });
+    } else {
+      mapMarkerRef.current.setPosition(position);
+    }
+
+    mapInstanceRef.current?.panTo(position);
+  };
+
+  const applyPickedLocation = async (google: any, lat: number, lng: number) => {
+    let label = await reverseGeocodePosition(google, lat, lng);
+    if (!label) {
+      label = await reverseGeocodeWithFallback(lat, lng);
+    }
+    updateSelectedLocation({
+      lat,
+      lng,
+      label: label || address || locationLabel || `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+    });
+  };
+
+  const searchAddressOnMap = async (addressQuery: string) => {
+    if (!addressQuery.trim()) {
+      setMapStatus('Enter an address to locate on map.');
+      return;
+    }
+
+    if (!googleMapsApiKey) {
+      setMapStatus('Set VITE_GOOGLE_MAPS_API_KEY in .env to use map search.');
+      return;
+    }
+
+    setIsMapBusy(true);
+    setMapStatus('');
+    try {
+      const google = await loadGoogleMapsApi(googleMapsApiKey);
+      const result = await geocodeAddress(google, addressQuery.trim());
+
+      const { lat, lng } = result;
+      setMarkerPosition(google, lat, lng);
+      mapInstanceRef.current?.setZoom(15);
+      updateSelectedLocation({
+        lat,
+        lng,
+        label: result.label || addressQuery.trim(),
+      });
+      setMapStatus('Address located. You can drag the pin to fine tune.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('REQUEST_DENIED')) {
+        const fallbackResult = await geocodeAddressWithFallback(addressQuery.trim());
+        if (fallbackResult) {
+          try {
+            const google = await loadGoogleMapsApi(googleMapsApiKey);
+            setMarkerPosition(google, fallbackResult.lat, fallbackResult.lng);
+            mapInstanceRef.current?.setZoom(15);
+            updateSelectedLocation(fallbackResult);
+            setMapStatus(
+              'Google geocoding request denied for this key. Address was resolved with fallback geocoder; enable Geocoding API, billing, and localhost referrer for Google geocoding.',
+            );
+          } catch {
+            setMapStatus(
+              'Google geocoding request denied. Enable Geocoding API, billing, and localhost referrer on your API key.',
+            );
+          }
+        } else {
+          setMapStatus(
+            'Google geocoding request denied. Enable Geocoding API, billing, and localhost referrer on your API key.',
+          );
+        }
+      } else {
+        setMapStatus(message || 'Unable to locate this address.');
+      }
+    } finally {
+      setIsMapBusy(false);
+    }
+  };
+
+  const openMapDialog = () => {
+    setIsMapDialogOpen(true);
+    setMapStatus('');
+    setMapSearchAddress((current) => current || locationLabel || address);
+  };
+
+  useEffect(() => {
+    if (!isMapDialogOpen) {
+      return;
+    }
+
+    if (!googleMapsApiKey) {
+      setIsMapReady(false);
+      setMapStatus('Set VITE_GOOGLE_MAPS_API_KEY in .env to enable the interactive map picker.');
+      return;
+    }
+
+    let isCancelled = false;
+    const initMap = async () => {
+      setIsMapBusy(true);
+      try {
+        const google = await loadGoogleMapsApi(googleMapsApiKey);
+        if (isCancelled || !mapContainerRef.current) {
+          return;
+        }
+
+        const initialCenter =
+          typeof locationLat === 'number' && typeof locationLng === 'number'
+            ? { lat: locationLat, lng: locationLng }
+            : DEFAULT_MAP_CENTER;
+
+        if (!mapInstanceRef.current) {
+          mapInstanceRef.current = new google.maps.Map(mapContainerRef.current, {
+            center: initialCenter,
+            zoom: typeof locationLat === 'number' && typeof locationLng === 'number' ? 14 : 5,
+            streetViewControl: false,
+            mapTypeControl: false,
+          });
+        } else {
+          mapInstanceRef.current.setCenter(initialCenter);
+          mapInstanceRef.current.setZoom(typeof locationLat === 'number' && typeof locationLng === 'number' ? 14 : 5);
+        }
+
+        setMarkerPosition(google, initialCenter.lat, initialCenter.lng);
+
+        if (mapClickListenerRef.current) {
+          google.maps.event.removeListener(mapClickListenerRef.current);
+        }
+        mapClickListenerRef.current = mapInstanceRef.current.addListener('click', (event: any) => {
+          if (!event?.latLng) {
+            return;
+          }
+
+          const lat = event.latLng.lat();
+          const lng = event.latLng.lng();
+          setMarkerPosition(google, lat, lng);
+          void applyPickedLocation(google, lat, lng);
+        });
+
+        if (markerDragListenerRef.current) {
+          google.maps.event.removeListener(markerDragListenerRef.current);
+        }
+        markerDragListenerRef.current = mapMarkerRef.current.addListener('dragend', (event: any) => {
+          if (!event?.latLng) {
+            return;
+          }
+
+          const lat = event.latLng.lat();
+          const lng = event.latLng.lng();
+          void applyPickedLocation(google, lat, lng);
+        });
+
+        setIsMapReady(true);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to initialize Google Map.';
+        setMapStatus(message);
+        setIsMapReady(false);
+      } finally {
+        if (!isCancelled) {
+          setIsMapBusy(false);
+        }
+      }
+    };
+
+    void initMap();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [googleMapsApiKey, isMapDialogOpen, locationLat, locationLng]);
+
+  useEffect(
+    () => () => {
+      const google = (window as any).google;
+      if (google?.maps?.event) {
+        if (mapClickListenerRef.current) {
+          google.maps.event.removeListener(mapClickListenerRef.current);
+        }
+        if (markerDragListenerRef.current) {
+          google.maps.event.removeListener(markerDragListenerRef.current);
+        }
+      }
+    },
+    [],
+  );
+
   const handleProfileSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSavingProfile(true);
@@ -235,7 +572,14 @@ const Profile = () => {
       const updated = await updateCurrentUserProfile({
         fullName,
         phoneNumber,
+        address,
         bio,
+        linkedinUrl,
+        githubUrl,
+        websiteUrl,
+        locationLabel,
+        locationLat,
+        locationLng,
         avatarUrl,
       });
       syncForm(updated);
@@ -272,7 +616,7 @@ const Profile = () => {
         <div className="container mx-auto px-4 max-w-4xl space-y-6">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Profile Settings</h1>
-            <p className="text-muted-foreground mt-2">Manage contact info, profile picture, bio, and account email.</p>
+            <p className="text-muted-foreground mt-2">Manage your profile picture, bio, personal details, and public links.</p>
           </div>
 
           {isBootstrapping && (
@@ -299,27 +643,32 @@ const Profile = () => {
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle>Profile Picture Preview</CardTitle>
-                  <CardDescription>Preview, crop, upload, or remove your avatar before saving profile changes.</CardDescription>
+                  <CardTitle>Public Profile Preview</CardTitle>
+                  <CardDescription>Preview the profile image, name, username, bio, and links shown on your profile.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-20 w-20 border border-border">
-                          <AvatarImage src={avatarUrl || undefined} alt={fullName || profile.username} />
-                          <AvatarFallback>{getInitials(fullName || profile.username)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">Current avatar preview</p>
-                          <p className="text-xs text-muted-foreground">
-                            {avatarUrl ? 'Image selected' : 'No avatar selected'}
+                  <div className="rounded-md border border-border bg-muted/20 p-5 space-y-5">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex flex-col items-center text-center lg:flex-row lg:items-center lg:text-left gap-5">
+                        <div className="flex h-28 w-28 items-center justify-center rounded-full border-2 border-primary/40 bg-background p-1">
+                          <Avatar className="h-full w-full">
+                            <AvatarImage src={avatarUrl || undefined} alt={fullName || profile.username} />
+                            <AvatarFallback>{getInitials(fullName || profile.username)}</AvatarFallback>
+                          </Avatar>
+                        </div>
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-2xl font-semibold text-foreground">{fullName || 'Your name'}</p>
+                            <p className="text-sm text-muted-foreground">@{profile.username}</p>
+                          </div>
+                          <p className="max-w-xl text-sm text-muted-foreground">
+                            {bio.trim() || 'Add a bio to tell people about your work.'}
                           </p>
-                          {hasAvatarChanges && <p className="text-xs text-primary mt-1">Unsaved avatar changes</p>}
+                          {hasAvatarChanges && <p className="text-xs text-primary">Unsaved avatar changes</p>}
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-2 justify-center lg:justify-end">
                         <Button type="button" variant="outline" onClick={triggerAvatarFilePicker}>
                           <Camera className="h-4 w-4 mr-2" />
                           Upload
@@ -337,6 +686,73 @@ const Profile = () => {
                           Delete
                         </Button>
                       </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <Phone className="mt-0.5 h-4 w-4 text-primary" />
+                        <span>{phoneNumber.trim() || 'Add your phone number in profile details.'}</span>
+                      </div>
+                      <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <MapPin className="mt-0.5 h-4 w-4 text-primary" />
+                        <span>{address.trim() || 'Add your address in profile details.'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                      {typeof locationLat === 'number' && typeof locationLng === 'number' ? (
+                        <>
+                          <span className="inline-flex items-center gap-1">
+                            Coordinates:
+                            <span className="font-medium text-foreground">{locationLat.toFixed(6)}</span>,
+                            <span className="font-medium text-foreground">{locationLng.toFixed(6)}</span>
+                          </span>
+                          <Button type="button" variant="outline" size="sm" onClick={openMapDialog}>
+                            Open Map Preview
+                          </Button>
+                        </>
+                      ) : (
+                        <span>No pinned location yet. Open the map picker in Profile Details.</span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      {linkedinUrl.trim() && (
+                        <a
+                          href={normalizePreviewUrl(linkedinUrl)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                        >
+                          <Linkedin className="h-4 w-4" />
+                          LinkedIn
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                      {githubUrl.trim() && (
+                        <a
+                          href={normalizePreviewUrl(githubUrl)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                        >
+                          <Github className="h-4 w-4" />
+                          GitHub
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                      {websiteUrl.trim() && (
+                        <a
+                          href={normalizePreviewUrl(websiteUrl)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                        >
+                          <Globe className="h-4 w-4" />
+                          Website
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
                     </div>
 
                     <p className="text-xs text-muted-foreground">
@@ -416,10 +832,67 @@ const Profile = () => {
                 </DialogContent>
               </Dialog>
 
+              <Dialog open={isMapDialogOpen} onOpenChange={setIsMapDialogOpen}>
+                <DialogContent className="max-w-6xl">
+                  <DialogHeader>
+                    <DialogTitle>Map Location Picker</DialogTitle>
+                    <DialogDescription>Search an address or click anywhere on the map to set an accurate pin.</DialogDescription>
+                  </DialogHeader>
+
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        value={mapSearchAddress}
+                        onChange={(event) => setMapSearchAddress(event.target.value)}
+                        placeholder="Search address for map pin"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void searchAddressOnMap(mapSearchAddress)}
+                        disabled={isMapBusy}
+                      >
+                        <Search className="h-4 w-4 mr-2" />
+                        Locate
+                      </Button>
+                    </div>
+
+                    {!googleMapsApiKey ? (
+                      <div className="rounded-md border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                        Google Maps is disabled. Add `VITE_GOOGLE_MAPS_API_KEY` to your `.env` file, then reload.
+                      </div>
+                    ) : (
+                      <div
+                        ref={mapContainerRef}
+                        className="h-[62vh] min-h-[360px] w-full rounded-md border border-border bg-muted/30"
+                      />
+                    )}
+
+                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                      <span>Picked address: {locationLabel || address || 'Not selected yet'}</span>
+                      <span>
+                        Coordinates:{' '}
+                        {typeof locationLat === 'number' && typeof locationLng === 'number'
+                          ? `${locationLat.toFixed(6)}, ${locationLng.toFixed(6)}`
+                          : 'Not selected yet'}
+                      </span>
+                      {isMapReady && <span>Tip: click on the map or drag the marker.</span>}
+                    </div>
+                    {mapStatus && <p className="text-sm text-muted-foreground">{mapStatus}</p>}
+                  </div>
+
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setIsMapDialogOpen(false)}>
+                      Close
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
               <Card>
                 <CardHeader>
                   <CardTitle>Profile Details</CardTitle>
-                  <CardDescription>Update your personal contact details and public bio.</CardDescription>
+                  <CardDescription>Update your personal details, bio, and public profile links.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleProfileSave} className="space-y-4">
@@ -450,6 +923,41 @@ const Profile = () => {
                     </div>
 
                     <div>
+                      <label htmlFor="profile-address" className="block text-sm text-foreground mb-2">
+                        Address
+                      </label>
+                      <Textarea
+                        id="profile-address"
+                        value={address}
+                        onChange={(event) => setAddress(event.target.value)}
+                        placeholder="City, state, country or full address"
+                        className="min-h-[88px]"
+                      />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void searchAddressOnMap(address)}
+                          disabled={isMapBusy}
+                        >
+                          <Search className="h-4 w-4 mr-2" />
+                          Locate Address
+                        </Button>
+                        <Button type="button" variant="outline" onClick={openMapDialog}>
+                          <MapPin className="h-4 w-4 mr-2" />
+                          Pinpoint On Map
+                        </Button>
+                      </div>
+                      {locationLabel && <p className="mt-2 text-xs text-muted-foreground">Pinned address: {locationLabel}</p>}
+                      {typeof locationLat === 'number' && typeof locationLng === 'number' && (
+                        <p className="text-xs text-muted-foreground">
+                          Coordinates: {locationLat.toFixed(6)}, {locationLng.toFixed(6)}
+                        </p>
+                      )}
+                      {mapStatus && <p className="mt-1 text-xs text-muted-foreground">{mapStatus}</p>}
+                    </div>
+
+                    <div>
                       <label htmlFor="profile-bio" className="block text-sm text-foreground mb-2">
                         Bio
                       </label>
@@ -460,6 +968,44 @@ const Profile = () => {
                         placeholder="Share what you work on."
                         className="min-h-[120px]"
                       />
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div>
+                        <label htmlFor="profile-linkedin" className="block text-sm text-foreground mb-2">
+                          LinkedIn Profile
+                        </label>
+                        <Input
+                          id="profile-linkedin"
+                          value={linkedinUrl}
+                          onChange={(event) => setLinkedinUrl(event.target.value)}
+                          placeholder="linkedin.com/in/your-name"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="profile-github" className="block text-sm text-foreground mb-2">
+                          GitHub Profile
+                        </label>
+                        <Input
+                          id="profile-github"
+                          value={githubUrl}
+                          onChange={(event) => setGithubUrl(event.target.value)}
+                          placeholder="github.com/your-handle"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="profile-website" className="block text-sm text-foreground mb-2">
+                          Website
+                        </label>
+                        <Input
+                          id="profile-website"
+                          value={websiteUrl}
+                          onChange={(event) => setWebsiteUrl(event.target.value)}
+                          placeholder="yourwebsite.com"
+                        />
+                      </div>
                     </div>
 
                     {profileStatus && <p className="text-sm text-muted-foreground">{profileStatus}</p>}
