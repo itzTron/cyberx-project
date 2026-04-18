@@ -10,6 +10,7 @@ import {
   getCommitDiff as gitGetCommitDiff,
   getFileAtCommit as gitGetFileAtCommit,
   listFilesAtCommit as gitListFilesAtCommit,
+  backfillRepoGitHistory,
   type GitAuthor,
   type GitBranch,
   type GitDiffEntry,
@@ -1802,7 +1803,7 @@ export const getRepositoryFileContent = async (repoId: string, filePath: string)
 };
 
 export const listRepositoryCommits = async (repoId: string) => {
-  const { supabase } = await ensureAuthenticatedUser();
+  const { supabase, user } = await ensureAuthenticatedUser();
   const { data, error } = await supabase
     .from('repo_commits')
     .select('id, repo_id, author_id, message, files_changed, created_at, git_hash, parent_hash')
@@ -1814,7 +1815,33 @@ export const listRepositoryCommits = async (repoId: string) => {
     throw new Error(error.message);
   }
 
-  return (data || []) as HubRepositoryCommit[];
+  const commits = (data || []) as HubRepositoryCommit[];
+
+  // Auto-backfill: if any commits lack git_hash, retroactively generate them
+  const hasUnhashed = commits.some((c) => !c.git_hash);
+  if (hasUnhashed) {
+    try {
+      const fullName = (user.user_metadata?.full_name as string | undefined)?.trim() || 'Unknown';
+      const backfilled = await backfillRepoGitHistory({
+        repoId,
+        author: { name: fullName, email: user.email || '' },
+      });
+      if (backfilled > 0) {
+        // Re-fetch commits with the newly generated hashes
+        const { data: refreshed } = await supabase
+          .from('repo_commits')
+          .select('id, repo_id, author_id, message, files_changed, created_at, git_hash, parent_hash')
+          .eq('repo_id', repoId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        return (refreshed || []) as HubRepositoryCommit[];
+      }
+    } catch (backfillError) {
+      console.error('Git hash backfill failed (non-blocking):', backfillError);
+    }
+  }
+
+  return commits;
 };
 
 export const downloadRepositoryAsZip = async ({

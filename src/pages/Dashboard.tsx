@@ -5,6 +5,7 @@ import {
   Archive,
   ArchiveRestore,
   Clock3,
+  Code,
   Diff,
   Ellipsis,
   Eye,
@@ -273,6 +274,28 @@ const Dashboard = () => {
   const [diffCommitMessage, setDiffCommitMessage] = useState('');
   const [diffEntries, setDiffEntries] = useState<DiffEntry[]>([]);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
+  const [editorRepoId, setEditorRepoId] = useState('');
+  const [editorFilename, setEditorFilename] = useState('');
+  const [editorCode, setEditorCode] = useState('');
+  const [editorCommitMessage, setEditorCommitMessage] = useState('');
+  const [editorStatus, setEditorStatus] = useState('');
+  const [isCommittingCode, setIsCommittingCode] = useState(false);
+  const [editorFiles, setEditorFiles] = useState<HubRepositoryFile[]>([]);
+  const [isEditorFilesLoading, setIsEditorFilesLoading] = useState(false);
+
+  const editorDetectedLanguage = useMemo(() => {
+    const ext = editorFilename.split('.').pop()?.toLowerCase() || '';
+    const langMap: Record<string, string> = {
+      ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+      json: 'json', html: 'html', css: 'css', scss: 'scss',
+      md: 'markdown', py: 'python', java: 'java', c: 'c',
+      cpp: 'cpp', cs: 'csharp', go: 'go', rs: 'rust',
+      sql: 'sql', yml: 'yaml', yaml: 'yaml', xml: 'xml',
+      sh: 'bash', txt: 'text', rb: 'ruby', php: 'php',
+      swift: 'swift', kt: 'kotlin', dart: 'dart', r: 'r',
+    };
+    return langMap[ext] || (ext ? ext : 'text');
+  }, [editorFilename]);
 
   const filteredRepositories = useMemo(
     () =>
@@ -809,6 +832,87 @@ const Dashboard = () => {
       setUploadStatus(message);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleCommitInlineCode = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setEditorStatus('');
+
+    if (!editorRepoId) {
+      setEditorStatus('Choose a repository first.');
+      return;
+    }
+
+    if (!editorFilename.trim()) {
+      setEditorStatus('Enter a file name (e.g. main.py, index.ts).');
+      return;
+    }
+
+    if (!editorCode.trim()) {
+      setEditorStatus('Write some code before committing.');
+      return;
+    }
+
+    setIsCommittingCode(true);
+
+    try {
+      const codeBlob = new Blob([editorCode], { type: 'text/plain' });
+      const codeFile = new File([codeBlob], editorFilename.trim(), { type: 'text/plain' });
+
+      const message = editorCommitMessage.trim() || `Add ${editorFilename.trim()}`;
+      await uploadRepositoryFiles({
+        repoId: editorRepoId,
+        files: [codeFile],
+        commitMessage: message,
+      });
+
+      setEditorStatus(`✓ Committed "${editorFilename.trim()}" successfully.`);
+      setEditorCode('');
+      setEditorFilename('');
+      setEditorCommitMessage('');
+      await refreshActivity();
+      await refreshRepositories();
+      setSelectedRepoId(editorRepoId);
+      await loadRepositoryDetails(editorRepoId);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to commit code.';
+      setEditorStatus(msg);
+    } finally {
+      setIsCommittingCode(false);
+    }
+  };
+
+  // Load files when editor repo changes
+  useEffect(() => {
+    if (!editorRepoId) {
+      setEditorFiles([]);
+      setEditorFilename('');
+      setEditorCode('');
+      return;
+    }
+    setIsEditorFilesLoading(true);
+    listRepositoryFiles(editorRepoId)
+      .then((files) => setEditorFiles(files))
+      .catch(() => setEditorFiles([]))
+      .finally(() => setIsEditorFilesLoading(false));
+  }, [editorRepoId]);
+
+  const handleEditorFileSelect = async (filePath: string) => {
+    setEditorFilename(filePath);
+    if (!filePath || !editorRepoId) return;
+
+    const existingFile = editorFiles.find((f) => f.path === filePath);
+    if (existingFile) {
+      try {
+        const fileContent = await getRepositoryFileContent(editorRepoId, filePath);
+        if (fileContent) {
+          setEditorCode(fileContent.content || '');
+          setEditorCommitMessage(`Update ${filePath}`);
+        }
+      } catch {
+        // Could not load — user can still type manually
+      }
     }
   };
 
@@ -1471,6 +1575,205 @@ const Dashboard = () => {
 
                           <Button type="submit" disabled={isUploading}>
                             {isUploading ? 'Uploading...' : 'Upload & Commit'}
+                          </Button>
+                        </form>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="mt-6">
+                      <CardHeader>
+                        <CardTitle className="text-xl flex items-center gap-2">
+                          <Code className="h-5 w-5 text-primary" />
+                          CodeFile
+                        </CardTitle>
+                        <CardDescription>
+                          Edit existing files or create new ones. Auto-detects language and commits to repository.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <form onSubmit={handleCommitInlineCode} className="space-y-4">
+                          <div>
+                            <label htmlFor="editor-repo" className="block text-sm text-foreground mb-2">
+                              Repository
+                            </label>
+                            <select
+                              id="editor-repo"
+                              value={editorRepoId}
+                              onChange={(e) => setEditorRepoId(e.target.value)}
+                              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                            >
+                              <option value="">Select repository</option>
+                              {pushableRepositories.map((repo) => (
+                                <option key={repo.id} value={repo.id}>
+                                  {repo.name} ({repo.visibility})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label htmlFor="editor-filename" className="block text-sm text-foreground mb-2">
+                              File Name
+                              {editorFiles.length > 0 && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  ({editorFiles.length} existing file{editorFiles.length !== 1 ? 's' : ''})
+                                </span>
+                              )}
+                            </label>
+                            {isEditorFilesLoading ? (
+                              <p className="text-xs text-muted-foreground">Loading files...</p>
+                            ) : editorFiles.length > 0 ? (
+                              <div className="space-y-2">
+                                <select
+                                  value={editorFiles.some((f) => f.path === editorFilename) ? editorFilename : '__new__'}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__new__') {
+                                      setEditorFilename('');
+                                      setEditorCode('');
+                                      setEditorCommitMessage('');
+                                    } else {
+                                      void handleEditorFileSelect(e.target.value);
+                                    }
+                                  }}
+                                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                >
+                                  <option value="__new__">+ Create new file</option>
+                                  {editorFiles.map((file) => (
+                                    <option key={file.id} value={file.path}>
+                                      {file.path} ({file.language})
+                                    </option>
+                                  ))}
+                                </select>
+                                {!editorFiles.some((f) => f.path === editorFilename) && (
+                                  <div className="flex items-center gap-3">
+                                    <Input
+                                      id="editor-filename"
+                                      value={editorFilename}
+                                      onChange={(e) => setEditorFilename(e.target.value)}
+                                      placeholder="e.g. main.py, index.ts, App.jsx"
+                                      className="flex-1"
+                                    />
+                                    {editorFilename && (
+                                      <span className="shrink-0 text-xs font-mono px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
+                                        {editorDetectedLanguage}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {editorFiles.some((f) => f.path === editorFilename) && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono text-foreground">{editorFilename}</span>
+                                    <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                                      editing
+                                    </span>
+                                    <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                                      {editorDetectedLanguage}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-3">
+                                <Input
+                                  id="editor-filename"
+                                  value={editorFilename}
+                                  onChange={(e) => setEditorFilename(e.target.value)}
+                                  placeholder="e.g. main.py, index.ts, App.jsx"
+                                  className="flex-1"
+                                />
+                                {editorFilename && (
+                                  <span className="shrink-0 text-xs font-mono px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
+                                    {editorDetectedLanguage}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <label htmlFor="editor-code" className="block text-sm text-foreground mb-2">
+                              Code
+                            </label>
+                            <div className="relative rounded-md border border-border overflow-hidden">
+                              {/* Line numbers + textarea editor */}
+                              <div className="flex">
+                                <div className="select-none bg-muted/30 text-muted-foreground text-right text-xs font-mono px-2 py-3 border-r border-border leading-[1.625rem] min-w-[3rem]">
+                                  {(editorCode || '\n').split('\n').map((_, i) => (
+                                    <div key={i}>{i + 1}</div>
+                                  ))}
+                                </div>
+                                <textarea
+                                  id="editor-code"
+                                  value={editorCode}
+                                  onChange={(e) => setEditorCode(e.target.value)}
+                                  placeholder="Write your code here..."
+                                  spellCheck={false}
+                                  className="flex-1 min-h-[320px] max-h-[600px] resize-y bg-background text-foreground text-sm font-mono p-3 leading-[1.625rem] focus:outline-none"
+                                  onKeyDown={(e) => {
+                                    // Tab key inserts 2 spaces instead of changing focus
+                                    if (e.key === 'Tab') {
+                                      e.preventDefault();
+                                      const target = e.target as HTMLTextAreaElement;
+                                      const start = target.selectionStart;
+                                      const end = target.selectionEnd;
+                                      const newValue = editorCode.substring(0, start) + '  ' + editorCode.substring(end);
+                                      setEditorCode(newValue);
+                                      requestAnimationFrame(() => {
+                                        target.selectionStart = target.selectionEnd = start + 2;
+                                      });
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 border-t border-border text-xs text-muted-foreground">
+                                <span>
+                                  {editorCode.split('\n').length} line{editorCode.split('\n').length !== 1 ? 's' : ''}
+                                  {' · '}
+                                  {new TextEncoder().encode(editorCode).length} bytes
+                                </span>
+                                <span className="font-mono">{editorDetectedLanguage}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Live syntax-highlighted preview */}
+                          {editorCode.trim() && (
+                            <div>
+                              <p className="text-sm text-foreground mb-2">Preview</p>
+                              <div className="rounded-md border border-border overflow-hidden max-h-[300px] overflow-y-auto">
+                                <SyntaxHighlighter
+                                  language={editorDetectedLanguage}
+                                  style={oneDark}
+                                  showLineNumbers
+                                  customStyle={{ margin: 0, fontSize: '0.8rem' }}
+                                >
+                                  {editorCode}
+                                </SyntaxHighlighter>
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <label htmlFor="editor-commit-msg" className="block text-sm text-foreground mb-2">
+                              Commit Message
+                            </label>
+                            <Input
+                              id="editor-commit-msg"
+                              value={editorCommitMessage}
+                              onChange={(e) => setEditorCommitMessage(e.target.value)}
+                              placeholder={editorFilename ? `Add ${editorFilename}` : 'Describe your changes'}
+                            />
+                          </div>
+
+                          {editorStatus && (
+                            <p className={`text-sm ${editorStatus.startsWith('✓') ? 'text-green-400' : 'text-muted-foreground'}`}>
+                              {editorStatus}
+                            </p>
+                          )}
+
+                          <Button type="submit" disabled={isCommittingCode}>
+                            <GitCommitHorizontal className="h-4 w-4 mr-2" />
+                            {isCommittingCode ? 'Committing...' : 'Commit Code'}
                           </Button>
                         </form>
                       </CardContent>

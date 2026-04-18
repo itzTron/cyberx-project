@@ -803,3 +803,131 @@ export const deleteBranch = async ({
     throw new Error(error.message);
   }
 };
+
+/**
+ * Retroactively generate Git hashes for existing commits that lack them.
+ * Called on repo load — walks commits oldest-first, builds a chain of
+ * proper Git SHAs, stores file snapshots, and creates the main branch ref.
+ */
+export const backfillRepoGitHistory = async ({
+  repoId,
+  author,
+}: {
+  repoId: string;
+  author: GitAuthor;
+}): Promise<number> => {
+  const { supabase } = await getAuthenticatedClient();
+
+  // Get all commits without git_hash, oldest first
+  const { data: unhashed, error: fetchError } = await supabase
+    .from('repo_commits')
+    .select('id, message, files_changed, created_at')
+    .eq('repo_id', repoId)
+    .is('git_hash', null)
+    .order('created_at', { ascending: true });
+
+  if (fetchError) {
+    throw new Error(fetchError.message);
+  }
+
+  if (!unhashed || unhashed.length === 0) {
+    return 0;
+  }
+
+  // Get the current files from repo_files (the latest state of the repo)
+  const { data: currentFiles } = await supabase
+    .from('repo_files')
+    .select('path, content, language, size_bytes')
+    .eq('repo_id', repoId)
+    .order('path', { ascending: true });
+
+  const files = (currentFiles || []) as Array<{
+    path: string;
+    content: string;
+    language: string;
+    size_bytes: number;
+  }>;
+
+  // Compute blob hashes for each file
+  const fileEntries: Array<{
+    path: string;
+    blobHash: string;
+    content: string;
+    sizeBytes: number;
+    language: string;
+  }> = [];
+  for (const f of files) {
+    const blobHash = await computeBlobHash(f.content || '');
+    fileEntries.push({
+      path: f.path,
+      blobHash,
+      content: f.content || '',
+      sizeBytes: f.size_bytes || 0,
+      language: f.language || detectLanguage(f.path),
+    });
+  }
+
+  // Walk through commits and generate hashes with a parent chain
+  let parentHash: string | null = null;
+  let latestHash = '';
+  let backfilledCount = 0;
+
+  for (const commit of unhashed) {
+    const treeHash = await computeTreeHash(
+      fileEntries.map((f) => ({ path: f.path, blobHash: f.blobHash })),
+    );
+
+    const tsSeconds = Math.floor(new Date(commit.created_at).getTime() / 1000);
+    const commitHash = await computeCommitHash({
+      treeHash,
+      parentHash,
+      author,
+      message: commit.message,
+      timestamp: tsSeconds,
+    });
+
+    // Store file snapshot for this commit
+    if (fileEntries.length > 0) {
+      const { error: snapError } = await supabase.from('git_file_snapshots').insert(
+        fileEntries.map((f) => ({
+          repo_id: repoId,
+          commit_hash: commitHash,
+          path: f.path,
+          blob_hash: f.blobHash,
+          content: f.content,
+          size_bytes: f.sizeBytes,
+          language: f.language,
+        })),
+      );
+      // Ignore duplicate key errors (snapshot already exists)
+      if (snapError && !snapError.message.includes('duplicate')) {
+        console.error('Snapshot insert error (non-blocking):', snapError.message);
+      }
+    }
+
+    // Update the commit row with its hash
+    await supabase
+      .from('repo_commits')
+      .update({ git_hash: commitHash, parent_hash: parentHash })
+      .eq('id', commit.id);
+
+    parentHash = commitHash;
+    latestHash = commitHash;
+    backfilledCount++;
+  }
+
+  // Ensure the main branch ref exists and points to the latest commit
+  if (latestHash) {
+    await supabase.from('git_refs').upsert(
+      {
+        repo_id: repoId,
+        ref_name: 'refs/heads/main',
+        target_hash: latestHash,
+      },
+      { onConflict: 'repo_id,ref_name' },
+    );
+  }
+
+  return backfilledCount;
+};
+
