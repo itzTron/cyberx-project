@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Mail, MapPin, Phone, Save, Search, Trash2 } from 'lucide-react';
+import { Camera, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Mail, MapPin, Navigation2, Phone, Save, Search, Trash2 } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
 
 import Footer from '@/components/Footer';
@@ -118,6 +118,7 @@ const Profile = () => {
   const [mapStatus, setMapStatus] = useState('');
   const [isMapBusy, setIsMapBusy] = useState(false);
   const [isMapReady, setIsMapReady] = useState(false);
+  const [isGpsLoading, setIsGpsLoading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState('');
   const [savedAvatarUrl, setSavedAvatarUrl] = useState('');
   const [email, setEmail] = useState('');
@@ -291,6 +292,67 @@ const Profile = () => {
 
   const reverseGeocodePosition = async (lat: number, lng: number): Promise<string> => {
     return reverseGeocodeWithLocationIQ(locationIQApiKey, lat, lng);
+  };
+
+  const handleGetGpsLocation = async () => {
+    if (!navigator.geolocation) {
+      setProfileStatus('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsGpsLoading(true);
+    setProfileStatus('');
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+      setLocationLat(latitude);
+      setLocationLng(longitude);
+
+      // Reverse geocode to get a readable address
+      try {
+        const label = await reverseGeocodePosition(latitude, longitude);
+        if (label) {
+          setLocationLabel(label);
+          setAddress(label);
+          setMapSearchAddress(label);
+        } else {
+          const coordLabel = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+          setLocationLabel(coordLabel);
+          setAddress(coordLabel);
+        }
+      } catch {
+        const coordLabel = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        setLocationLabel(coordLabel);
+        setAddress(coordLabel);
+      }
+
+      setProfileStatus('GPS location detected successfully.');
+    } catch (error) {
+      const geoError = error as GeolocationPositionError;
+      switch (geoError.code) {
+        case geoError.PERMISSION_DENIED:
+          setProfileStatus('Location permission denied. Please allow GPS access in your browser settings.');
+          break;
+        case geoError.POSITION_UNAVAILABLE:
+          setProfileStatus('Location information is unavailable.');
+          break;
+        case geoError.TIMEOUT:
+          setProfileStatus('GPS request timed out. Please try again.');
+          break;
+        default:
+          setProfileStatus('Unable to get your location.');
+      }
+    } finally {
+      setIsGpsLoading(false);
+    }
   };
 
   const setMarkerPosition = (google: any, lat: number, lng: number) => {
@@ -853,6 +915,19 @@ const Profile = () => {
                         className="min-h-[88px]"
                       />
                       <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void handleGetGpsLocation()}
+                          disabled={isGpsLoading}
+                        >
+                          {isGpsLoading ? (
+                            <LoaderCircle className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Navigation2 className="h-4 w-4 mr-2" />
+                          )}
+                          {isGpsLoading ? 'Detecting...' : 'Use GPS'}
+                        </Button>
                         <Button
                           type="button"
                           variant="outline"
