@@ -25,6 +25,7 @@ import {
   type HubUserProfile,
 } from '@/lib/hubApi';
 import { loadGoogleMapsApi } from '@/lib/googleMaps';
+import { geocodeWithLocationIQ, reverseGeocodeWithLocationIQ } from '@/lib/locationIQ';
 
 const MAX_AVATAR_BYTES = 1_500_000;
 const DEFAULT_MAP_CENTER = { lat: 20.5937, lng: 78.9629 };
@@ -134,11 +135,12 @@ const Profile = () => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const mapMarkerRef = useRef<any>(null);
-  const mapGeocoderRef = useRef<any>(null);
+
   const mapClickListenerRef = useRef<any>(null);
   const markerDragListenerRef = useRef<any>(null);
   const hasAvatarChanges = avatarUrl.trim() !== savedAvatarUrl.trim();
   const googleMapsApiKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined)?.trim() || '';
+  const locationIQApiKey = (import.meta.env.VITE_LOCATIONIQ_API_KEY as string | undefined)?.trim() || '';
 
   const syncForm = (data: HubUserProfile) => {
     setProfile(data);
@@ -283,94 +285,12 @@ const Profile = () => {
     }
   };
 
-  const ensureGeocoder = (google: any) => {
-    if (!mapGeocoderRef.current) {
-      mapGeocoderRef.current = new google.maps.Geocoder();
-    }
-
-    return mapGeocoderRef.current;
+  const geocodeAddress = async (addressQuery: string): Promise<GeocodeResult> => {
+    return geocodeWithLocationIQ(locationIQApiKey, addressQuery);
   };
 
-  const geocodeAddress = (google: any, addressQuery: string) =>
-    new Promise<GeocodeResult>((resolve, reject) => {
-      const geocoder = ensureGeocoder(google);
-      geocoder.geocode({ address: addressQuery }, (results: any, status: string) => {
-        if (status === 'OK' && results?.[0]) {
-          const result = results[0];
-          resolve({
-            lat: result.geometry.location.lat(),
-            lng: result.geometry.location.lng(),
-            label: result.formatted_address || addressQuery,
-          });
-          return;
-        }
-
-        reject(new Error(status || 'Unable to geocode address.'));
-      });
-    });
-
-  const reverseGeocodePosition = (google: any, lat: number, lng: number) =>
-    new Promise<string>((resolve) => {
-      const geocoder = ensureGeocoder(google);
-      geocoder.geocode({ location: { lat, lng } }, (results: any, status: string) => {
-        if (status === 'OK' && results?.[0]?.formatted_address) {
-          resolve(results[0].formatted_address as string);
-          return;
-        }
-
-        resolve('');
-      });
-    });
-
-  const geocodeAddressWithFallback = async (addressQuery: string): Promise<GeocodeResult | null> => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(addressQuery)}`,
-      );
-      if (!response.ok) {
-        return null;
-      }
-
-      const data = (await response.json()) as Array<{
-        lat?: string;
-        lon?: string;
-        display_name?: string;
-      }>;
-      const match = data?.[0];
-      if (!match?.lat || !match?.lon) {
-        return null;
-      }
-
-      const lat = Number(match.lat);
-      const lng = Number(match.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        return null;
-      }
-
-      return {
-        lat,
-        lng,
-        label: (match.display_name || addressQuery).trim(),
-      };
-    } catch {
-      return null;
-    }
-  };
-
-  const reverseGeocodeWithFallback = async (lat: number, lng: number): Promise<string> => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lng))}`,
-      );
-      if (!response.ok) {
-        return '';
-      }
-
-      const data = (await response.json()) as { display_name?: string };
-      return (data.display_name || '').trim();
-    } catch {
-      return '';
-    }
+  const reverseGeocodePosition = async (lat: number, lng: number): Promise<string> => {
+    return reverseGeocodeWithLocationIQ(locationIQApiKey, lat, lng);
   };
 
   const setMarkerPosition = (google: any, lat: number, lng: number) => {
@@ -388,11 +308,8 @@ const Profile = () => {
     mapInstanceRef.current?.panTo(position);
   };
 
-  const applyPickedLocation = async (google: any, lat: number, lng: number) => {
-    let label = await reverseGeocodePosition(google, lat, lng);
-    if (!label) {
-      label = await reverseGeocodeWithFallback(lat, lng);
-    }
+  const applyPickedLocation = async (_google: any, lat: number, lng: number) => {
+    const label = await reverseGeocodePosition(lat, lng);
     updateSelectedLocation({
       lat,
       lng,
@@ -406,20 +323,24 @@ const Profile = () => {
       return;
     }
 
-    if (!googleMapsApiKey) {
-      setMapStatus('Set VITE_GOOGLE_MAPS_API_KEY in .env to use map search.');
-      return;
-    }
-
     setIsMapBusy(true);
     setMapStatus('');
     try {
-      const google = await loadGoogleMapsApi(googleMapsApiKey);
-      const result = await geocodeAddress(google, addressQuery.trim());
+      const result = await geocodeAddress(addressQuery.trim());
 
       const { lat, lng } = result;
-      setMarkerPosition(google, lat, lng);
-      mapInstanceRef.current?.setZoom(15);
+
+      // If the Google Map is loaded, move the marker on it
+      if (googleMapsApiKey && mapInstanceRef.current) {
+        try {
+          const google = await loadGoogleMapsApi(googleMapsApiKey);
+          setMarkerPosition(google, lat, lng);
+          mapInstanceRef.current.setZoom(15);
+        } catch {
+          // Map pan failed – coordinates are still saved
+        }
+      }
+
       updateSelectedLocation({
         lat,
         lng,
@@ -428,30 +349,7 @@ const Profile = () => {
       setMapStatus('Address located. You can drag the pin to fine tune.');
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
-      if (message.includes('REQUEST_DENIED')) {
-        const fallbackResult = await geocodeAddressWithFallback(addressQuery.trim());
-        if (fallbackResult) {
-          try {
-            const google = await loadGoogleMapsApi(googleMapsApiKey);
-            setMarkerPosition(google, fallbackResult.lat, fallbackResult.lng);
-            mapInstanceRef.current?.setZoom(15);
-            updateSelectedLocation(fallbackResult);
-            setMapStatus(
-              'Google geocoding request denied for this key. Address was resolved with fallback geocoder; enable Geocoding API, billing, and localhost referrer for Google geocoding.',
-            );
-          } catch {
-            setMapStatus(
-              'Google geocoding request denied. Enable Geocoding API, billing, and localhost referrer on your API key.',
-            );
-          }
-        } else {
-          setMapStatus(
-            'Google geocoding request denied. Enable Geocoding API, billing, and localhost referrer on your API key.',
-          );
-        }
-      } else {
-        setMapStatus(message || 'Unable to locate this address.');
-      }
+      setMapStatus(message || 'Unable to locate this address.');
     } finally {
       setIsMapBusy(false);
     }
