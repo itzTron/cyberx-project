@@ -1,5 +1,20 @@
 import { getSupabaseClient } from '@/lib/supabase';
 import JSZip from 'jszip';
+import {
+  initGitRepo,
+  commitChanges as gitCommitChanges,
+  listBranches as gitListBranches,
+  createBranch as gitCreateBranch,
+  mergeBranch as gitMergeBranch,
+  deleteBranch as gitDeleteBranch,
+  getCommitDiff as gitGetCommitDiff,
+  getFileAtCommit as gitGetFileAtCommit,
+  listFilesAtCommit as gitListFilesAtCommit,
+  type GitAuthor,
+  type GitBranch,
+  type GitDiffEntry,
+  type GitFileSnapshot,
+} from '@/lib/gitVcs';
 
 export type RepositoryVisibility = 'public' | 'private';
 
@@ -34,6 +49,8 @@ export type HubRepositoryCommit = {
   message: string;
   files_changed: number;
   created_at: string;
+  git_hash?: string | null;
+  parent_hash?: string | null;
 };
 
 export type HubActivityLog = {
@@ -1491,11 +1508,27 @@ ${description || 'Describe your project here.'}
     }
   }
 
+  // Create Git VCS commit with proper SHA hash
+  let gitHash: string | null = null;
+  try {
+    const gitAuthor: GitAuthor = {
+      name: (user.user_metadata?.full_name as string | undefined)?.trim() || 'Unknown',
+      email: user.email || '',
+    };
+    const initialFiles = defaultReadme ? [{ path: 'README.md', content: defaultReadme }] : [];
+    const gitCommit = await initGitRepo({ repoId: repoData.id, files: initialFiles, author: gitAuthor });
+    gitHash = gitCommit.hash;
+  } catch (gitError) {
+    console.error('Git VCS init failed (non-blocking):', gitError);
+  }
+
   const { error: commitError } = await supabase.from('repo_commits').insert({
     repo_id: repoData.id,
     author_id: user.id,
     message: 'Initial commit',
     files_changed: defaultReadme ? 1 : 0,
+    git_hash: gitHash,
+    parent_hash: null,
   });
 
   if (commitError) {
@@ -1772,7 +1805,7 @@ export const listRepositoryCommits = async (repoId: string) => {
   const { supabase } = await ensureAuthenticatedUser();
   const { data, error } = await supabase
     .from('repo_commits')
-    .select('id, repo_id, author_id, message, files_changed, created_at')
+    .select('id, repo_id, author_id, message, files_changed, created_at, git_hash, parent_hash')
     .eq('repo_id', repoId)
     .order('created_at', { ascending: false })
     .limit(50);
@@ -1928,11 +1961,30 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
   }
 
   const message = commitMessage.trim() || `Upload ${records.length} file(s)`;
+
+  // Create Git VCS commit with proper SHA hash
+  let gitHash: string | null = null;
+  let parentHash: string | null = null;
+  try {
+    const gitAuthor: GitAuthor = {
+      name: (user.user_metadata?.full_name as string | undefined)?.trim() || 'Unknown',
+      email: user.email || '',
+    };
+    const gitFiles = records.map((r) => ({ path: r.path, content: r.content }));
+    const gitCommit = await gitCommitChanges({ repoId, files: gitFiles, message, author: gitAuthor });
+    gitHash = gitCommit.hash;
+    parentHash = gitCommit.parentHash;
+  } catch (gitError) {
+    console.error('Git VCS commit failed (non-blocking):', gitError);
+  }
+
   const { error: commitError } = await supabase.from('repo_commits').insert({
     repo_id: repoId,
     author_id: user.id,
     message,
     files_changed: records.length,
+    git_hash: gitHash,
+    parent_hash: parentHash,
   });
 
   if (commitError) {
@@ -2016,4 +2068,101 @@ export const signOutDashboardUser = async () => {
   if (error) {
     throw new Error(error.message);
   }
+};
+
+/* ------------------------------------------------------------------ */
+/*  Git VCS — branch, merge, diff, file-at-commit API wrappers         */
+/* ------------------------------------------------------------------ */
+
+export const getRepositoryBranches = async (repoId: string): Promise<GitBranch[]> => {
+  return gitListBranches(repoId);
+};
+
+export const createRepositoryBranch = async ({
+  repoId,
+  branchName,
+  fromBranch,
+}: {
+  repoId: string;
+  branchName: string;
+  fromBranch?: string;
+}): Promise<GitBranch> => {
+  return gitCreateBranch({ repoId, branchName, fromBranch });
+};
+
+export const mergeRepositoryBranch = async ({
+  repoId,
+  sourceBranch,
+  targetBranch,
+}: {
+  repoId: string;
+  sourceBranch: string;
+  targetBranch?: string;
+}): Promise<void> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const gitAuthor: GitAuthor = {
+    name: (user.user_metadata?.full_name as string | undefined)?.trim() || 'Unknown',
+    email: user.email || '',
+  };
+
+  const gitCommit = await gitMergeBranch({ repoId, sourceBranch, targetBranch, author: gitAuthor });
+
+  // Record merge commit in repo_commits
+  await supabase.from('repo_commits').insert({
+    repo_id: repoId,
+    author_id: user.id,
+    message: gitCommit.message,
+    files_changed: gitCommit.filesChanged,
+    git_hash: gitCommit.hash,
+    parent_hash: gitCommit.parentHash,
+  });
+
+  await pushActivity({
+    userId: user.id,
+    email: user.email || '',
+    activityType: 'repo_branch_merged',
+    context: { repo_id: repoId, source_branch: sourceBranch, target_branch: targetBranch || 'main' },
+  });
+};
+
+export const deleteRepositoryBranch = async ({
+  repoId,
+  branchName,
+}: {
+  repoId: string;
+  branchName: string;
+}): Promise<void> => {
+  return gitDeleteBranch({ repoId, branchName });
+};
+
+export const getRepositoryCommitDiff = async ({
+  repoId,
+  commitHash,
+}: {
+  repoId: string;
+  commitHash: string;
+}): Promise<GitDiffEntry[]> => {
+  return gitGetCommitDiff({ repoId, commitHash });
+};
+
+export const getRepositoryFileAtCommit = async ({
+  repoId,
+  commitHash,
+  filePath,
+}: {
+  repoId: string;
+  commitHash: string;
+  filePath: string;
+}): Promise<GitFileSnapshot | null> => {
+  return gitGetFileAtCommit({ repoId, commitHash, filePath });
+};
+
+export const getRepositoryFilesAtCommit = async ({
+  repoId,
+  commitHash,
+}: {
+  repoId: string;
+  commitHash: string;
+}): Promise<GitFileSnapshot[]> => {
+  return gitListFilesAtCommit({ repoId, commitHash });
 };

@@ -5,6 +5,7 @@ import {
   Archive,
   ArchiveRestore,
   Clock3,
+  Diff,
   Ellipsis,
   Eye,
   EyeOff,
@@ -29,6 +30,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 import GitHubReadme from '@/components/GitHubReadme';
+import BranchSelector, { type BranchInfo } from '@/components/BranchSelector';
+import CommitDiffViewer, { type DiffEntry } from '@/components/CommitDiffViewer';
 import Footer from '@/components/Footer';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -49,14 +52,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
   createRepository,
+  createRepositoryBranch,
   deleteRepository,
+  deleteRepositoryBranch,
   getDashboardBootstrap,
+  getRepositoryBranches,
+  getRepositoryCommitDiff,
   getRepositoryFileContent,
   listActivityLogs,
   listPushableRepositories,
   listRepositories,
   listRepositoryCommits,
   listRepositoryFiles,
+  mergeRepositoryBranch,
   setRepositoryArchiveState,
   signOutDashboardUser,
   updateRepositoryVisibility,
@@ -258,6 +266,13 @@ const Dashboard = () => {
   const [uploadCommitMessage, setUploadCommitMessage] = useState('Upload project files');
   const [uploadStatus, setUploadStatus] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [activeBranch, setActiveBranch] = useState('main');
+  const [diffDialogOpen, setDiffDialogOpen] = useState(false);
+  const [diffCommitHash, setDiffCommitHash] = useState('');
+  const [diffCommitMessage, setDiffCommitMessage] = useState('');
+  const [diffEntries, setDiffEntries] = useState<DiffEntry[]>([]);
+  const [isDiffLoading, setIsDiffLoading] = useState(false);
 
   const filteredRepositories = useMemo(
     () =>
@@ -335,7 +350,11 @@ const Dashboard = () => {
     setRepoDataError('');
 
     try {
-      const [files, commits] = await Promise.all([listRepositoryFiles(repoId), listRepositoryCommits(repoId)]);
+      const [files, commits, repoBranches] = await Promise.all([
+        listRepositoryFiles(repoId),
+        listRepositoryCommits(repoId),
+        getRepositoryBranches(repoId).catch(() => [] as BranchInfo[]),
+      ]);
 
       if (lastRepoLoadRef.current !== requestId) {
         return;
@@ -344,6 +363,8 @@ const Dashboard = () => {
       setRepositoryFiles(files);
       repoFileListCacheRef.current[repoId] = files;
       setRepositoryCommits(commits);
+      setBranches(repoBranches);
+      setActiveBranch(repoBranches.length > 0 ? repoBranches[0].name : 'main');
 
       const fallbackPath = files.find((file) => file.path.toLowerCase() === 'readme.md')?.path || files[0]?.path || '';
       const pathToLoad = preferredPath && files.some((file) => file.path === preferredPath) ? preferredPath : fallbackPath;
@@ -1217,11 +1238,40 @@ const Dashboard = () => {
 
                       <Card>
                         <CardHeader>
-                          <CardTitle className="text-xl flex items-center gap-2">
-                            <GitCommitHorizontal className="h-5 w-5 text-primary" />
-                            Commit History
-                          </CardTitle>
-                          <CardDescription>Latest commits for the selected repository.</CardDescription>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <CardTitle className="text-xl flex items-center gap-2">
+                                <GitCommitHorizontal className="h-5 w-5 text-primary" />
+                                Commit History
+                              </CardTitle>
+                              <CardDescription>Latest commits for the selected repository.</CardDescription>
+                            </div>
+                            {selectedRepoId && (
+                              <BranchSelector
+                                branches={branches}
+                                activeBranch={activeBranch}
+                                onBranchChange={(branch) => {
+                                  setActiveBranch(branch);
+                                }}
+                                onCreateBranch={async (name, from) => {
+                                  await createRepositoryBranch({ repoId: selectedRepoId, branchName: name, fromBranch: from });
+                                  const updated = await getRepositoryBranches(selectedRepoId);
+                                  setBranches(updated);
+                                }}
+                                onDeleteBranch={async (name) => {
+                                  await deleteRepositoryBranch({ repoId: selectedRepoId, branchName: name });
+                                  const updated = await getRepositoryBranches(selectedRepoId);
+                                  setBranches(updated);
+                                  if (activeBranch === name) setActiveBranch('main');
+                                }}
+                                onMergeBranch={async (source, target) => {
+                                  await mergeRepositoryBranch({ repoId: selectedRepoId, sourceBranch: source, targetBranch: target });
+                                  const updated = await getRepositoryBranches(selectedRepoId);
+                                  setBranches(updated);
+                                }}
+                              />
+                            )}
+                          </div>
                         </CardHeader>
                         <CardContent>
                           {repositoryCommits.length === 0 ? (
@@ -1230,16 +1280,61 @@ const Dashboard = () => {
                             <div className="space-y-3">
                               {repositoryCommits.slice(0, 10).map((commit) => (
                                 <div key={commit.id} className="rounded-md border border-border p-3">
-                                  <p className="text-sm font-medium text-foreground">{commit.message}</p>
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    Files changed: {commit.files_changed} | {formatDateTime(commit.created_at)}
-                                  </p>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium text-foreground">{commit.message}</p>
+                                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                        {commit.git_hash && (
+                                          <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                            {commit.git_hash.slice(0, 7)}
+                                          </span>
+                                        )}
+                                        <span className="text-xs text-muted-foreground">
+                                          Files changed: {commit.files_changed}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {formatDateTime(commit.created_at)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    {commit.git_hash && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2"
+                                        onClick={() => {
+                                          const hash = commit.git_hash!;
+                                          setDiffCommitHash(hash);
+                                          setDiffCommitMessage(commit.message);
+                                          setDiffDialogOpen(true);
+                                          setIsDiffLoading(true);
+                                          setDiffEntries([]);
+                                          getRepositoryCommitDiff({ repoId: selectedRepoId, commitHash: hash })
+                                            .then((entries) => setDiffEntries(entries))
+                                            .catch(() => setDiffEntries([]))
+                                            .finally(() => setIsDiffLoading(false));
+                                        }}
+                                      >
+                                        <Diff className="h-3.5 w-3.5 mr-1" />
+                                        Diff
+                                      </Button>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                             </div>
                           )}
                         </CardContent>
                       </Card>
+
+                      <CommitDiffViewer
+                        open={diffDialogOpen}
+                        onOpenChange={setDiffDialogOpen}
+                        commitHash={diffCommitHash}
+                        commitMessage={diffCommitMessage}
+                        diff={diffEntries}
+                        isLoading={isDiffLoading}
+                      />
                     </div>
                   </TabsContent>
 
