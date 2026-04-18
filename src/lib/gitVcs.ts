@@ -757,13 +757,21 @@ export const getCommitDiff = async ({
   const currentMap = new Map((currentFiles || []).map((f: any) => [f.path, f]));
   const diff: GitDiffEntry[] = [];
 
+  // Helper: normalise content for comparison (strip \r, trailing whitespace)
+  const norm = (s: string) => (s || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd();
+
   // Check for added and modified files
   for (const [path, file] of currentMap) {
     const parentFile = parentMap.get(path);
     if (!parentFile) {
       diff.push({ path, status: 'added', oldContent: '', newContent: (file as any).content });
-    } else if ((parentFile as any).blob_hash !== (file as any).blob_hash) {
-      diff.push({ path, status: 'modified', oldContent: (parentFile as any).content, newContent: (file as any).content });
+    } else {
+      const oldNorm = norm((parentFile as any).content);
+      const newNorm = norm((file as any).content);
+      // Only report as modified if content actually differs after normalisation
+      if (oldNorm !== newNorm) {
+        diff.push({ path, status: 'modified', oldContent: (parentFile as any).content, newContent: (file as any).content });
+      }
     }
   }
 

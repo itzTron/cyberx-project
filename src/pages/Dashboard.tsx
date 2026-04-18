@@ -1694,21 +1694,64 @@ const Dashboard = () => {
                             <label htmlFor="editor-code" className="block text-sm text-foreground mb-2">
                               Code
                             </label>
-                            <div className="relative rounded-md border border-border overflow-hidden">
-                              {/* Line numbers + textarea editor */}
-                              <div className="flex">
-                                <div className="select-none bg-muted/30 text-muted-foreground text-right text-xs font-mono px-2 py-3 border-r border-border leading-[1.625rem] min-w-[3rem]">
-                                  {(editorCode || '\n').split('\n').map((_, i) => (
-                                    <div key={i}>{i + 1}</div>
-                                  ))}
+                            <div className="relative rounded-md border border-border overflow-hidden" style={{ background: '#282c34' }}>
+                              {/* IDE-style overlay editor: syntax highlight behind transparent textarea */}
+                              <div className="relative min-h-[320px] max-h-[600px] overflow-auto">
+                                {/* Syntax-highlighted layer (behind) */}
+                                <div aria-hidden="true" className="absolute inset-0 pointer-events-none overflow-hidden">
+                                  <SyntaxHighlighter
+                                    language={editorDetectedLanguage}
+                                    style={oneDark}
+                                    showLineNumbers
+                                    customStyle={{
+                                      margin: 0,
+                                      padding: '0.75rem',
+                                      background: 'transparent',
+                                      fontSize: '0.82rem',
+                                      lineHeight: '1.5',
+                                      minHeight: '100%',
+                                      overflow: 'visible',
+                                      whiteSpace: 'pre',
+                                      wordBreak: 'keep-all',
+                                    }}
+                                    lineNumberStyle={{
+                                      minWidth: '2.5em',
+                                      color: '#6b7280',
+                                      userSelect: 'none',
+                                      paddingRight: '1rem',
+                                    }}
+                                    codeTagProps={{
+                                      style: {
+                                        fontSize: '0.82rem',
+                                        lineHeight: '1.5',
+                                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                                      },
+                                    }}
+                                  >
+                                    {editorCode || ' '}
+                                  </SyntaxHighlighter>
                                 </div>
+                                {/* Transparent textarea (on top) */}
                                 <textarea
                                   id="editor-code"
                                   value={editorCode}
                                   onChange={(e) => setEditorCode(e.target.value)}
                                   placeholder="Write your code here..."
                                   spellCheck={false}
-                                  className="flex-1 min-h-[320px] max-h-[600px] resize-y bg-background text-foreground text-sm font-mono p-3 leading-[1.625rem] focus:outline-none"
+                                  className="relative w-full min-h-[320px] resize-y font-mono focus:outline-none"
+                                  style={{
+                                    background: 'transparent',
+                                    color: 'transparent',
+                                    caretColor: '#e5e7eb',
+                                    fontSize: '0.82rem',
+                                    lineHeight: '1.5',
+                                    padding: '0.75rem 0.75rem 0.75rem 4.5rem',
+                                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                                    whiteSpace: 'pre',
+                                    overflowWrap: 'normal',
+                                    wordBreak: 'keep-all',
+                                    WebkitTextFillColor: 'transparent',
+                                  } as React.CSSProperties}
                                   onKeyDown={(e) => {
                                     // Tab key inserts 2 spaces instead of changing focus
                                     if (e.key === 'Tab') {
@@ -1723,6 +1766,14 @@ const Dashboard = () => {
                                       });
                                     }
                                   }}
+                                  onScroll={(e) => {
+                                    const target = e.target as HTMLTextAreaElement;
+                                    const highlightLayer = target.previousElementSibling as HTMLElement;
+                                    if (highlightLayer) {
+                                      highlightLayer.scrollTop = target.scrollTop;
+                                      highlightLayer.scrollLeft = target.scrollLeft;
+                                    }
+                                  }}
                                 />
                               </div>
                               <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 border-t border-border text-xs text-muted-foreground">
@@ -1735,23 +1786,6 @@ const Dashboard = () => {
                               </div>
                             </div>
                           </div>
-
-                          {/* Live syntax-highlighted preview */}
-                          {editorCode.trim() && (
-                            <div>
-                              <p className="text-sm text-foreground mb-2">Preview</p>
-                              <div className="rounded-md border border-border overflow-hidden max-h-[300px] overflow-y-auto">
-                                <SyntaxHighlighter
-                                  language={editorDetectedLanguage}
-                                  style={oneDark}
-                                  showLineNumbers
-                                  customStyle={{ margin: 0, fontSize: '0.8rem' }}
-                                >
-                                  {editorCode}
-                                </SyntaxHighlighter>
-                              </div>
-                            </div>
-                          )}
 
                           <div>
                             <label htmlFor="editor-commit-msg" className="block text-sm text-foreground mb-2">
