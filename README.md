@@ -19,6 +19,8 @@ A full-featured cybersecurity platform built with **Vite + React + TypeScript**.
 |---|---|
 | **Security Tools** | Network scanner, encryption suite (AES-256), password analyser, threat detector |
 | **Hub / Dashboard** | GitHub-style workspace — create repositories, upload code, view commits, manage files |
+| **Git VCS** | Real Git-compatible version control — SHA-1 commit hashes, branches, merge, file-level diffs |
+| **CodeFile Editor** | Inline code editor with auto language detection, syntax preview, edit existing files or create new ones |
 | **User Profiles** | Avatar upload & crop, bio, social links (LinkedIn, GitHub, website), phone & address |
 | **Location Picker** | Interactive Google Maps picker with **LocationIQ**-powered geocoding (forward & reverse) |
 | **Profile README** | Markdown-based profile page with GitHub-flavored rendering and asset support |
@@ -191,13 +193,16 @@ cyberx-project/
 │   │   ├── GitHubReadme.tsx    # Markdown renderer for profile READMEs
 │   │   ├── GlassCard.tsx       # Glassmorphism card component
 │   │   ├── SectionHeader.tsx   # Section title component
-│   │   └── ToolCard.tsx        # Security tool card component
+│   │   ├── ToolCard.tsx        # Security tool card component
+│   │   ├── BranchSelector.tsx  # Git branch switcher / create / merge UI
+│   │   └── CommitDiffViewer.tsx # Commit diff dialog with inline file diffs
 │   ├── data/                   # Static data (tools list, etc.)
 │   ├── hooks/                  # Custom React hooks
 │   ├── lib/                    # Utility libraries
 │   │   ├── supabase.ts         # Supabase client initialisation
 │   │   ├── authApi.ts          # Authentication API helpers
-│   │   ├── hubApi.ts           # Hub / repository / profile API
+│   │   ├── hubApi.ts           # Hub / repository / profile API + Git VCS wrappers
+│   │   ├── gitVcs.ts           # Git VCS engine (SHA-1 hashing, commits, branches, merge, diff)
 │   │   ├── googleMaps.ts       # Google Maps API loader
 │   │   ├── locationIQ.ts       # LocationIQ geocoding API
 │   │   ├── emailValidation.ts  # Email validation utilities
@@ -212,7 +217,7 @@ cyberx-project/
 │   │   ├── Contact.tsx          # Contact form
 │   │   ├── SignIn.tsx           # Sign in page
 │   │   ├── SignUp.tsx           # Sign up page
-│   │   ├── Dashboard.tsx        # Hub dashboard (repositories, files, commits)
+│   │   ├── Dashboard.tsx        # Hub dashboard (repos, files, commits, branches, CodeFile editor)
 │   │   ├── Profile.tsx          # Profile settings (avatar, bio, location, links)
 │   │   ├── Activity.tsx         # Activity feed
 │   │   └── NotFound.tsx         # 404 page
@@ -221,7 +226,7 @@ cyberx-project/
 │   └── index.css               # Global styles & Tailwind directives
 ├── supabase/
 │   ├── config.toml             # Supabase project configuration
-│   └── migrations/             # SQL migration files
+│   └── migrations/             # SQL migration files (includes Git VCS tables)
 ├── .env.example                # Environment variable template
 ├── package.json                # Dependencies & scripts
 ├── tailwind.config.ts          # Tailwind CSS configuration
@@ -310,6 +315,46 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 - Ensure Docker Desktop is running (for local Supabase).
 - Update the Supabase CLI to the latest version: `npm i -g supabase`.
 - Run `supabase status` to check if the local stack is already running.
+
+---
+
+## 🔀 Git Version Control System
+
+Cyberspace-X 2.0 includes a **browser-native Git VCS** that produces **real Git-compatible SHA-1 hashes** — no server-side Git binary required.
+
+### How It Works
+
+| Layer | Description |
+|---|---|
+| **`gitVcs.ts`** | Core engine — computes Git blob, tree, and commit hashes using Web Crypto API (SHA-1) |
+| **`hubApi.ts`** | API wrappers for branches, merge, diff, and file-at-commit |
+| **Supabase tables** | `git_file_snapshots` (file tree per commit), `git_refs` (branch pointers), `repo_commits.git_hash` |
+| **Dashboard UI** | Branch selector, commit SHA badges, inline diff viewer, CodeFile editor |
+
+### Features
+
+- **Commit Hashes** — every commit gets a Git-compatible SHA-1 hash (identical to `git hash-object`)
+- **Branches** — create, switch, merge, and delete branches
+- **Merge** — file-level merge with merge commit
+- **Diff Viewer** — click any commit to see file-level additions, modifications, and deletions
+- **Retroactive Backfill** — existing repos automatically get Git hashes on first load
+- **CodeFile Editor** — write or edit code inline, auto-detect language, commit directly
+
+### Database Tables
+
+The Git VCS uses these tables (created by migration `20260418120000_add_git_vcs_tables.sql`):
+
+```sql
+-- File snapshots per commit
+git_file_snapshots (id, repo_id, commit_hash, path, blob_hash, content, size_bytes, language)
+
+-- Branch refs
+git_refs (id, repo_id, ref_name, target_hash)
+
+-- Extended commit columns
+repo_commits.git_hash    -- Git SHA-1 hash
+repo_commits.parent_hash -- Parent commit hash
+```
 
 ---
 
