@@ -39,6 +39,27 @@ export type GitHubRepoImportInput = {
   defaultBranch: string;
 };
 
+export type GitHubRepoTreeEntry = {
+  path: string;
+  mode: string;
+  type: 'blob' | 'tree' | 'commit';
+  sha: string;
+  size?: number;
+  url: string;
+};
+
+export type GitHubRepoTreeResponse = {
+  sha: string;
+  tree: GitHubRepoTreeEntry[];
+  truncated: boolean;
+};
+
+export type GitHubRepoBlobResponse = {
+  content: string;
+  encoding: string;
+  size: number;
+};
+
 /* ------------------------------------------------------------------ */
 /*  Token management (sessionStorage)                                  */
 /* ------------------------------------------------------------------ */
@@ -49,8 +70,8 @@ const GITHUB_TOKEN_KEY = 'cyberx_github_provider_token';
  * Extracts the GitHub provider_token from a Supabase session and stores it
  * in sessionStorage for the duration of the browser tab.
  *
- * Supabase only surfaces the provider_token once — immediately after the
- * OAuth callback — so we must capture it right away.
+ * Supabase only surfaces the provider_token once - immediately after the
+ * OAuth callback - so we must capture it right away.
  */
 export const extractAndStoreGitHubToken = (session: {
   provider_token?: string | null;
@@ -96,6 +117,15 @@ export const clearGitHubToken = (): void => {
 /* ------------------------------------------------------------------ */
 
 const GITHUB_API_BASE = 'https://api.github.com';
+
+const decodeGitHubBase64 = (base64Content: string): Uint8Array => {
+  const binaryString = atob((base64Content || '').replace(/\n/g, ''));
+  const bytes = new Uint8Array(binaryString.length);
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index);
+  }
+  return bytes;
+};
 
 const githubFetch = async <T>(
   path: string,
@@ -184,18 +214,12 @@ export const fetchGitHubRepoReadme = async (
     );
 
     if (data.encoding === 'base64' && data.content) {
-      // GitHub returns base64-encoded content — decode it
-      const binaryString = atob(data.content.replace(/\n/g, ''));
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      return new TextDecoder().decode(bytes);
+      return new TextDecoder().decode(decodeGitHubBase64(data.content));
     }
 
     return data.content || '';
   } catch (error) {
-    // 404 means no README — that's fine
+    // 404 means no README - that's fine
     if (
       error instanceof Error &&
       error.message.includes('404')
@@ -259,3 +283,43 @@ export const fetchGitHubRepoZip = async (
 
   return response.arrayBuffer();
 };
+
+/**
+ * Fetches a recursive Git tree for the provided repository ref.
+ * Useful fallback when ZIP archive downloads are blocked by browser CORS.
+ */
+export const fetchGitHubRepoTree = async (
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<GitHubRepoTreeResponse> => {
+  const token = getGitHubToken();
+  if (!token) {
+    throw new Error('No GitHub token available. Sign in with GitHub first.');
+  }
+
+  return githubFetch<GitHubRepoTreeResponse>(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+    token,
+  );
+};
+
+/**
+ * Fetches a Git blob by SHA and returns its encoded payload.
+ */
+export const fetchGitHubRepoBlob = async (
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<GitHubRepoBlobResponse> => {
+  const token = getGitHubToken();
+  if (!token) {
+    throw new Error('No GitHub token available. Sign in with GitHub first.');
+  }
+
+  return githubFetch<GitHubRepoBlobResponse>(
+    `/repos/${owner}/${repo}/git/blobs/${sha}`,
+    token,
+  );
+};
+

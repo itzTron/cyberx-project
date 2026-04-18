@@ -1,5 +1,12 @@
 import { getSupabaseClient } from '@/lib/supabase';
-import { clearGitHubToken, fetchGitHubRepoReadme, fetchGitHubRepoZip, type GitHubRepoImportInput } from '@/lib/githubApi';
+import {
+  clearGitHubToken,
+  fetchGitHubRepoBlob,
+  fetchGitHubRepoReadme,
+  fetchGitHubRepoTree,
+  fetchGitHubRepoZip,
+  type GitHubRepoImportInput,
+} from '@/lib/githubApi';
 import JSZip from 'jszip';
 import {
   initGitRepo,
@@ -119,6 +126,8 @@ export type UploadRepositoryFilesInput = {
 
 const MAX_FILES_PER_UPLOAD = 30;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_GITHUB_IMPORT_FILES = 2000;
+const GITHUB_BLOB_FETCH_BATCH_SIZE = 8;
 const PROFILE_SELECT_COLUMNS_BASE = 'id, email, full_name, username, profile_readme, bio, phone_number, avatar_url';
 const PROFILE_SELECT_COLUMNS_WITH_SOCIAL = `${PROFILE_SELECT_COLUMNS_BASE}, address, linkedin_url, github_url, website_url`;
 const PROFILE_SELECT_COLUMNS_WITH_LOCATION = `${PROFILE_SELECT_COLUMNS_BASE}, location_label, location_lat, location_lng`;
@@ -185,11 +194,11 @@ const normalizeZipFilePath = (value: string) =>
     .filter(Boolean)
     .join('/');
 
-const readFileAsDataUrl = (file: File) =>
+const readFileAsDataUrl = (file: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-    reader.onerror = () => reject(new Error(`Unable to read "${file.name}".`));
+    reader.onerror = () => reject(new Error('Unable to read binary file content.'));
     reader.readAsDataURL(file);
   });
 
@@ -222,6 +231,16 @@ const hasNullByte = (buffer: ArrayBuffer) => {
   }
 
   return false;
+};
+
+const decodeGitHubBase64ToBytes = (base64Content: string) => {
+  const payload = (base64Content || '').replace(/\n/g, '');
+  const binaryString = atob(payload);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index);
+  }
+  return bytes;
 };
 
 const decodeDataUrlToBytes = (dataUrl: string) => {
@@ -2297,7 +2316,7 @@ export const importGitHubRepository = async ({
       let content = '';
       if (isBinary) {
         const blob = new Blob([buffer]);
-        content = await readFileAsDataUrl(blob as any);
+        content = await readFileAsDataUrl(blob);
       } else {
         content = new TextDecoder().decode(buffer);
       }
@@ -2314,10 +2333,90 @@ export const importGitHubRepository = async ({
       gitFiles.push({ path: finalPath, content });
     }
   } catch (err) {
-    console.warn('Zip import failed (likely CORS or Private Repo restriction), falling back to README...', err);
+    console.warn('Zip import failed (likely CORS or Private Repo restriction), trying Git tree fallback...', err);
   }
 
-  // Fallback: If zip is completely empty or errors, make sure we at least have README
+  // Fallback 2: If ZIP import fails/returns nothing, import via Git tree + blobs.
+  if (records.length === 0) {
+    try {
+      const treeResponse = await fetchGitHubRepoTree(owner, name, defaultBranch);
+      const blobEntries = treeResponse.tree
+        .filter((entry) => entry.type === 'blob' && Boolean(entry.path) && Boolean(entry.sha))
+        .slice(0, MAX_GITHUB_IMPORT_FILES);
+
+      const processBlobEntry = async (entry: { path: string; sha: string; size?: number }) => {
+        const finalPath = normalizeZipFilePath(entry.path || '');
+        if (!finalPath) {
+          return null;
+        }
+
+        if ((entry.size || 0) > MAX_FILE_SIZE_BYTES) {
+          return null;
+        }
+
+        const blobResponse = await fetchGitHubRepoBlob(owner, name, entry.sha);
+        if (!blobResponse.content) {
+          return null;
+        }
+
+        const bytes =
+          blobResponse.encoding === 'base64'
+            ? decodeGitHubBase64ToBytes(blobResponse.content)
+            : new TextEncoder().encode(blobResponse.content || '');
+
+        if (bytes.byteLength > MAX_FILE_SIZE_BYTES) {
+          return null;
+        }
+
+        const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        const extension = finalPath.split('.').pop()?.toLowerCase() || '';
+        const isKnownTextExtension = Boolean(extensionLanguageMap[extension]);
+        const isBinary = hasNullByte(buffer) && !isKnownTextExtension;
+
+        let content = '';
+        if (isBinary) {
+          content = await readFileAsDataUrl(new Blob([buffer], { type: 'application/octet-stream' }));
+        } else {
+          content = new TextDecoder().decode(bytes);
+        }
+
+        return {
+          record: {
+            repo_id: repoId,
+            path: finalPath,
+            language: isBinary ? 'binary:application/octet-stream' : detectLanguageFromPath(finalPath),
+            content,
+            size_bytes: bytes.byteLength,
+            created_by: user.id,
+          },
+          gitFile: {
+            path: finalPath,
+            content,
+          },
+        };
+      };
+
+      for (let index = 0; index < blobEntries.length; index += GITHUB_BLOB_FETCH_BATCH_SIZE) {
+        const batch = blobEntries.slice(index, index + GITHUB_BLOB_FETCH_BATCH_SIZE);
+        const results = await Promise.all(batch.map((entry) => processBlobEntry(entry)));
+        for (const result of results) {
+          if (!result) {
+            continue;
+          }
+          records.push(result.record);
+          gitFiles.push(result.gitFile);
+        }
+      }
+
+      if (treeResponse.truncated) {
+        console.warn(`GitHub tree response is truncated for ${owner}/${name}. Imported the first ${blobEntries.length} files.`);
+      }
+    } catch (err) {
+      console.warn('Git tree fallback import failed, falling back to README only...', err);
+    }
+  }
+
+  // Fallback 3: Ensure README exists if no files were imported from ZIP/tree.
   if (records.length === 0 && readmeContent.trim()) {
     records.push({
       repo_id: repoId,
