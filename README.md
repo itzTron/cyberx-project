@@ -1,81 +1,129 @@
-# cyberx-project
+<p align="center">
+  <img src="https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
+  <img src="https://img.shields.io/badge/Supabase-Backend-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
+</p>
 
-`cyberx-project` is a Vite + React + TypeScript frontend for the Cyberspace-X 2.0 security platform. It uses Supabase for authentication, profile data, activity logging, and repository-style hub features.
+# 🛡️ Cyberspace-X 2.0
 
-## Tech Stack
+A full-featured cybersecurity platform built with **Vite + React + TypeScript**. Cyberspace-X 2.0 provides a focused suite of security tools for network analysis, threat detection, and secure operational workflows — complete with a GitHub-style hub for code repositories, user profiles, and activity tracking.
 
-- Vite
-- React 18
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Supabase
+---
 
-## Prerequisites
+## ✨ Features
 
-Install these before starting:
+| Category | Highlights |
+|---|---|
+| **Security Tools** | Network scanner, encryption suite (AES-256), password analyser, threat detector |
+| **Hub / Dashboard** | GitHub-style workspace — create repositories, upload code, view commits, manage files |
+| **User Profiles** | Avatar upload & crop, bio, social links (LinkedIn, GitHub, website), phone & address |
+| **Location Picker** | Interactive Google Maps picker with **LocationIQ**-powered geocoding (forward & reverse) |
+| **Profile README** | Markdown-based profile page with GitHub-flavored rendering and asset support |
+| **Activity Feed** | Real-time activity logging for all repository and profile actions |
+| **Auth System** | Sign up, sign in, email verification, and session management via Supabase Auth |
+| **UI/UX** | Dark theme, glassmorphism, Matrix rain animation, neon accents, Framer Motion animations, typewriter hero text |
+| **Responsive** | Fully responsive across desktop, tablet, and mobile devices |
 
-- Node.js 18 or later
-- npm 9 or later
-- Git
-- Supabase CLI (optional, only needed if you want to run the backend locally or apply migrations to your own Supabase project)
+---
 
-## Step-by-Step Installation
+## 🛠️ Tech Stack
 
-### 1. Clone the repository
+| Layer | Technology |
+|---|---|
+| **Build Tool** | [Vite 5](https://vitejs.dev/) with SWC |
+| **Framework** | [React 18](https://react.dev/) |
+| **Language** | [TypeScript 5](https://www.typescriptlang.org/) |
+| **Styling** | [Tailwind CSS 3](https://tailwindcss.com/) + [tailwindcss-animate](https://github.com/jamiebuilds/tailwindcss-animate) |
+| **UI Components** | [shadcn/ui](https://ui.shadcn.com/) + [Radix UI](https://www.radix-ui.com/) |
+| **Animations** | [Framer Motion](https://www.framer.com/motion/) |
+| **Backend** | [Supabase](https://supabase.com/) (Auth, PostgreSQL, Storage) |
+| **Routing** | [React Router v6](https://reactrouter.com/) |
+| **Charts** | [Recharts](https://recharts.org/) |
+| **Markdown** | [react-markdown](https://github.com/remarkjs/react-markdown) + remark-gfm + rehype-raw |
+| **Maps** | [Google Maps JavaScript API](https://developers.google.com/maps/documentation/javascript) |
+| **Geocoding** | [LocationIQ API](https://locationiq.com/) |
+| **State** | [TanStack Query](https://tanstack.com/query) (React Query) |
+| **Forms** | [React Hook Form](https://react-hook-form.com/) + [Zod](https://zod.dev/) |
+| **Code Quality** | ESLint 9 + SonarQube (optional) |
+
+---
+
+## 📋 Prerequisites
+
+Make sure you have these installed before proceeding:
+
+- **[Node.js](https://nodejs.org/)** v18 or later
+- **[npm](https://www.npmjs.com/)** v9 or later (comes with Node.js)
+- **[Git](https://git-scm.com/)**
+- **[Supabase CLI](https://supabase.com/docs/guides/cli)** *(optional — only needed to run migrations or a local Supabase instance)*
+- **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** *(optional — only needed for local Supabase)*
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/itzTron/cyberx-project.git
 cd cyberx-project
 ```
 
-### 2. Install project dependencies
+### 2. Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Create your environment file
+### 3. Create the Environment File
 
-Copy the example file and create a local `.env`:
+Copy the example `.env` and fill in your keys:
 
+**Linux / macOS:**
 ```bash
 cp .env.example .env
 ```
 
-If you are on Windows PowerShell, use:
-
+**Windows PowerShell:**
 ```powershell
 Copy-Item .env.example .env
 ```
 
-### 4. Configure Supabase environment variables
+### 4. Configure Environment Variables
 
-Open `.env` and set the frontend variables:
+Open `.env` in your editor and set the required values:
 
 ```env
+# ── Supabase (Required) ──────────────────────────────────────────
 VITE_SUPABASE_PROJECT_ID=your_project_id
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# ── Google Maps (Optional – interactive map picker) ───────────────
+VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+
+# ── LocationIQ (Optional – address geocoding) ─────────────────────
+VITE_LOCATIONIQ_API_KEY=your_locationiq_api_key
 ```
 
-Notes:
+> **Notes:**
+> - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are **required** for auth and dashboard to work.
+> - If `VITE_SUPABASE_URL` is omitted, the app falls back to building the URL from `VITE_SUPABASE_PROJECT_ID`.
+> - `VITE_GOOGLE_MAPS_API_KEY` enables the interactive map picker on the profile page. Without it, the visual map is disabled but geocoding still works.
+> - `VITE_LOCATIONIQ_API_KEY` is used for address search (forward geocoding) and coordinate-to-address resolution (reverse geocoding). Get a free key at [locationiq.com](https://locationiq.com/).
 
-- `VITE_SUPABASE_URL` can be used on its own.
-- If `VITE_SUPABASE_URL` is omitted, the app builds the URL from `VITE_SUPABASE_PROJECT_ID`.
-- The app will not start correctly for auth and dashboard features until `VITE_SUPABASE_ANON_KEY` is set.
+### 5. Set Up the Database
 
-### 5. Apply the database schema
+This project depends on SQL migrations in [`supabase/migrations/`](./supabase/migrations). Choose one of the options below.
 
-This project depends on the SQL migrations inside [`supabase/migrations`](./supabase/migrations). You have two setup options.
+#### Option A — Hosted Supabase Project (Recommended)
 
-#### Option A: Use an existing hosted Supabase project
-
-1. Create a Supabase project in the Supabase dashboard.
-2. Add the values from that project to `.env`.
-3. Apply the SQL in `supabase/migrations` to your project.
-
-If you want to use the CLI for that:
+1. Create a project at [supabase.com](https://supabase.com/).
+2. Copy your **Project ID**, **URL**, and **Anon Key** into `.env`.
+3. Apply migrations using the Supabase CLI:
 
 ```bash
 supabase login
@@ -83,97 +131,215 @@ supabase link --project-ref your_project_id
 supabase db push
 ```
 
-#### Option B: Run Supabase locally
+#### Option B — Local Supabase (Docker)
 
-1. Install Docker Desktop and the Supabase CLI.
-2. Start the local stack:
+1. Make sure Docker Desktop is running.
+2. Start the local Supabase stack:
 
 ```bash
 supabase start
 ```
 
-3. Get the local API URL and anon key:
+3. Get the local credentials:
 
 ```bash
 supabase status
 ```
 
-4. Update `.env` with the local values returned by the CLI.
-5. If needed, apply migrations:
+4. Update `.env` with the local URL and anon key.
+5. Apply migrations:
 
 ```bash
 supabase db reset
 ```
 
-### 6. Start the development server
+### 6. Start the Development Server
 
 ```bash
 npm run dev
 ```
 
-Open the local app at:
+The app will be available at:
 
-```text
-http://localhost:5173
+```
+http://localhost:8080
 ```
 
-### 7. Verify the setup
+### 7. Verify Your Setup
 
-After the app starts:
+1. Open the app in your browser.
+2. Navigate to `/signup` and create a test account.
+3. Confirm that **Sign In**, **Profile**, and **Dashboard** pages load without errors.
+4. *(Optional)* Go to `/profile`, add an address, and click **Locate Address** to verify LocationIQ geocoding.
 
-1. Open the homepage in your browser.
-2. Go to `/signup` and create a test account.
-3. Confirm that sign-in, profile, and dashboard pages load without Supabase configuration errors.
+---
 
-## Useful Scripts
+## 📁 Project Structure
+
+```
+cyberx-project/
+├── public/                     # Static assets
+├── scripts/                    # Build & CI scripts (SonarQube)
+├── src/
+│   ├── components/             # Reusable UI components
+│   │   ├── ui/                 # shadcn/ui primitives
+│   │   ├── Navbar.tsx          # Global navigation bar
+│   │   ├── Footer.tsx          # Site footer
+│   │   ├── MatrixRain.tsx      # Matrix rain background animation
+│   │   ├── Preloader.tsx       # Splash screen preloader
+│   │   ├── NavigationProgress.tsx  # GitHub-style page loading bar
+│   │   ├── GitHubReadme.tsx    # Markdown renderer for profile READMEs
+│   │   ├── GlassCard.tsx       # Glassmorphism card component
+│   │   ├── SectionHeader.tsx   # Section title component
+│   │   └── ToolCard.tsx        # Security tool card component
+│   ├── data/                   # Static data (tools list, etc.)
+│   ├── hooks/                  # Custom React hooks
+│   ├── lib/                    # Utility libraries
+│   │   ├── supabase.ts         # Supabase client initialisation
+│   │   ├── authApi.ts          # Authentication API helpers
+│   │   ├── hubApi.ts           # Hub / repository / profile API
+│   │   ├── googleMaps.ts       # Google Maps API loader
+│   │   ├── locationIQ.ts       # LocationIQ geocoding API
+│   │   ├── emailValidation.ts  # Email validation utilities
+│   │   └── utils.ts            # General utilities
+│   ├── pages/                  # Route page components
+│   │   ├── Index.tsx            # Homepage
+│   │   ├── Features.tsx         # Features overview
+│   │   ├── Tools.tsx            # Security tools listing
+│   │   ├── ToolDetail.tsx       # Individual tool detail page
+│   │   ├── Download.tsx         # Download page
+│   │   ├── Docs.tsx             # Documentation page
+│   │   ├── Contact.tsx          # Contact form
+│   │   ├── SignIn.tsx           # Sign in page
+│   │   ├── SignUp.tsx           # Sign up page
+│   │   ├── Dashboard.tsx        # Hub dashboard (repositories, files, commits)
+│   │   ├── Profile.tsx          # Profile settings (avatar, bio, location, links)
+│   │   ├── Activity.tsx         # Activity feed
+│   │   └── NotFound.tsx         # 404 page
+│   ├── App.tsx                 # Root component with routing
+│   ├── main.tsx                # Application entry point
+│   └── index.css               # Global styles & Tailwind directives
+├── supabase/
+│   ├── config.toml             # Supabase project configuration
+│   └── migrations/             # SQL migration files
+├── .env.example                # Environment variable template
+├── package.json                # Dependencies & scripts
+├── tailwind.config.ts          # Tailwind CSS configuration
+├── tsconfig.json               # TypeScript configuration
+└── vite.config.ts              # Vite build configuration
+```
+
+---
+
+## 📜 Available Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the development server on `http://localhost:8080` |
+| `npm run build` | Build the production bundle to `dist/` |
+| `npm run build:dev` | Build in development mode (with source maps) |
+| `npm run preview` | Preview the production build locally |
+| `npm run lint` | Run ESLint across the project |
+| `npm run sonar:check` | Verify SonarQube token is configured |
+| `npm run sonar:scan` | Run SonarQube scanner for code analysis |
+
+---
+
+## 🌐 API Keys Guide
+
+### Supabase (Required)
+
+1. Go to [supabase.com](https://supabase.com/) and create a free project.
+2. Navigate to **Project Settings → API** to find your URL and anon key.
+3. Add them to `.env`.
+
+### LocationIQ (Free — Geocoding)
+
+1. Sign up at [locationiq.com](https://locationiq.com/).
+2. Get your API token from the dashboard.
+3. Add it to `.env` as `VITE_LOCATIONIQ_API_KEY`.
+4. Free tier includes **5,000 requests/day**.
+
+### Google Maps (Optional — Interactive Map)
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Enable the **Maps JavaScript API**.
+3. Create an API key and restrict it to your domain.
+4. Add it to `.env` as `VITE_GOOGLE_MAPS_API_KEY`.
+
+> **Tip:** The profile location feature works **without** Google Maps — geocoding uses LocationIQ. Google Maps only adds the visual interactive map picker.
+
+---
+
+## 🏗️ Build for Production
 
 ```bash
-npm run dev
-npm run build
-npm run preview
-npm run lint
-npm run sonar:check
-npm run sonar:scan
-```
-
-## Project Structure
-
-```text
-.
-|-- public/
-|-- scripts/
-|-- src/
-|-- supabase/
-|   |-- config.toml
-|   `-- migrations/
-|-- .env.example
-|-- package.json
-`-- vite.config.ts
-```
-
-## Troubleshooting
-
-### Supabase is not configured
-
-If you see an error about Supabase not being configured, check that:
-
-- `.env` exists in the project root
-- `VITE_SUPABASE_ANON_KEY` is set
-- `VITE_SUPABASE_URL` or `VITE_SUPABASE_PROJECT_ID` is set
-- you restarted `npm run dev` after editing `.env`
-
-### Migrations fail locally
-
-If `supabase db push` or `supabase db reset` fails:
-
-- make sure Docker is running
-- make sure the Supabase CLI is installed and updated
-- check whether your local stack is already running with `supabase status`
-
-## Build for Production
-
-```bash
 npm run build
 ```
 
-The production-ready frontend output is generated in `dist/`.
+The optimised production bundle is output to the `dist/` directory. You can deploy it to any static hosting provider:
+
+- [Vercel](https://vercel.com/)
+- [Netlify](https://www.netlify.com/)
+- [Cloudflare Pages](https://pages.cloudflare.com/)
+- [GitHub Pages](https://pages.github.com/)
+
+---
+
+## 🔧 Troubleshooting
+
+### "Supabase is not configured" error
+
+- Verify `.env` exists in the project root.
+- Confirm `VITE_SUPABASE_ANON_KEY` is set.
+- Confirm `VITE_SUPABASE_URL` or `VITE_SUPABASE_PROJECT_ID` is set.
+- **Restart the dev server** after editing `.env` (Vite requires a restart to load new env variables).
+
+### Address search / geocoding not working
+
+- Verify `VITE_LOCATIONIQ_API_KEY` is set in `.env`.
+- Check your LocationIQ usage quota at [locationiq.com/dashboard](https://locationiq.com/dashboard).
+- Restart the dev server after adding the key.
+
+### Map picker shows black screen on re-open
+
+- This was a known issue that has been fixed. If you still encounter it, pull the latest code.
+
+### Database migrations fail
+
+- Ensure Docker Desktop is running (for local Supabase).
+- Update the Supabase CLI to the latest version: `npm i -g supabase`.
+- Run `supabase status` to check if the local stack is already running.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! To contribute:
+
+1. **Fork** the repository.
+2. **Create a branch** for your feature or fix:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. **Commit** your changes with a clear message:
+   ```bash
+   git commit -m "feat: add your feature description"
+   ```
+4. **Push** to your fork:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+5. **Open a Pull Request** against the `main` branch.
+
+---
+
+## 📄 License
+
+This project is open-source and available under the [MIT License](./LICENSE).
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://github.com/itzTron">itzTron</a>
+</p>
