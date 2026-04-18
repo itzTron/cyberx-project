@@ -443,6 +443,27 @@ const Profile = () => {
 
     return () => {
       isCancelled = true;
+
+      // Clean up map refs when dialog closes so a fresh map is created on re-open
+      const google = (window as any).google;
+      if (google?.maps?.event) {
+        if (mapClickListenerRef.current) {
+          google.maps.event.removeListener(mapClickListenerRef.current);
+          mapClickListenerRef.current = null;
+        }
+        if (markerDragListenerRef.current) {
+          google.maps.event.removeListener(markerDragListenerRef.current);
+          markerDragListenerRef.current = null;
+        }
+      }
+
+      if (mapMarkerRef.current) {
+        mapMarkerRef.current.setMap?.(null);
+        mapMarkerRef.current = null;
+      }
+
+      mapInstanceRef.current = null;
+      setIsMapReady(false);
     };
   }, [googleMapsApiKey, isMapDialogOpen, locationLat, locationLng]);
 
