@@ -17,6 +17,7 @@ import Contact from "./pages/Contact";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
 import Dashboard from "./pages/Dashboard";
+import Repository from "./pages/Repository";
 import Profile from "./pages/Profile";
 import Activity from "./pages/Activity";
 import NotFound from "./pages/NotFound";
@@ -53,7 +54,7 @@ const App = () => {
             <Route path="/signin" element={<SignIn />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/repository" element={<Dashboard />} />
+            <Route path="/repository" element={<Repository />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/activity" element={<Activity />} />
             <Route path="/:username" element={<Dashboard />} />
