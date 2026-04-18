@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '@/lib/supabase';
-import { clearGitHubToken, fetchGitHubRepoReadme, type GitHubRepoImportInput } from '@/lib/githubApi';
+import { clearGitHubToken, fetchGitHubRepoReadme, fetchGitHubRepoZip, type GitHubRepoImportInput } from '@/lib/githubApi';
 import JSZip from 'jszip';
 import {
   initGitRepo,
@@ -578,7 +578,7 @@ const ensureProfileRow = async ({
   userId: string;
   email: string;
   fullName: string;
-}) => {
+}): Promise<any> => {
   const supabase = getSupabaseClient();
   const [hasSocialColumns, hasLocationColumns] = await Promise.all([
     hasProfileSocialColumns(supabase),
@@ -599,7 +599,7 @@ const ensureProfileRow = async ({
   }
 
   if (data) {
-    if (!data.username) {
+    if (!(data as any).username) {
       const fallbackUsername = buildUsernameCandidate({
         fullName,
         email,
@@ -1269,7 +1269,7 @@ export const updateCurrentUserProfile = async ({
   return mergeProfileExtras({
     userId: user.id,
     profile: mapProfileRecord({
-      profile: data,
+      profile: data as any,
       fallbackEmail: user.email || '',
       fallbackName: nextFullName,
     }),
@@ -2210,6 +2210,8 @@ export const importGitHubRepository = async ({
   githubUrl,
   visibility,
   readmeContent,
+  owner,
+  defaultBranch,
 }: GitHubRepoImportInput): Promise<HubRepository> => {
   const { supabase, user } = await ensureAuthenticatedUser();
   const slug = normalizeRepoSlug(name);
@@ -2227,8 +2229,7 @@ export const importGitHubRepository = async ({
     throw new Error(`A repository named "${name}" already exists. Rename or delete it first.`);
   }
 
-  const readmeMd = readmeContent || '';
-
+  // Insert Repository row
   const { data, error } = await supabase
     .from('repositories')
     .insert({
@@ -2237,7 +2238,7 @@ export const importGitHubRepository = async ({
       slug,
       description: description || '',
       visibility,
-      readme_md: readmeMd,
+      readme_md: readmeContent || '',
       github_url: githubUrl,
       imported_from_github: true,
     })
@@ -2249,28 +2250,124 @@ export const importGitHubRepository = async ({
   }
 
   const repository = mapRepositoryRecord(data);
+  const repoId = repository.id;
 
-  // Store the README as an initial file
-  if (readmeMd.trim()) {
-    await upsertRepositoryFile({
-      supabase,
-      repoId: repository.id,
-      userId: user.id,
-      filePath: 'README.md',
-      content: readmeMd,
-    });
+  const records: Array<{
+    repo_id: string;
+    path: string;
+    language: string;
+    content: string;
+    size_bytes: number;
+    created_by: string;
+  }> = [];
+
+  const gitFiles: Array<{ path: string; content: string }> = [];
+
+  try {
+    // 1. Fetch ZIP
+    const zipArrayBuffer = await fetchGitHubRepoZip(owner, name, defaultBranch, visibility === 'public');
+
+    // 2. Load with JSZip
+    const zip = new JSZip();
+    await zip.loadAsync(zipArrayBuffer);
+
+    // 3. Process zip entries
+    for (const zipPath of Object.keys(zip.files)) {
+      const zipEntry = zip.files[zipPath];
+      if (zipEntry.dir) continue;
+
+      // GitHub zips have a top-level dir (e.g., owner-repo-sha/). Strip it.
+      const pathParts = zipPath.split('/');
+      pathParts.shift(); // Remove top level
+      if (pathParts.length === 0) continue;
+
+      const finalPath = normalizeZipFilePath(pathParts.join('/'));
+      if (!finalPath) continue;
+
+      const u8 = await zipEntry.async("uint8array");
+      const buffer = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
+
+      // Skip huge files
+      if (u8.byteLength > 5 * 1024 * 1024) continue; // 5MB limit
+
+      const extension = finalPath.split('.').pop()?.toLowerCase() || '';
+      const isKnownTextExtension = Boolean(extensionLanguageMap[extension]);
+      const isBinary = hasNullByte(buffer) && !isKnownTextExtension;
+
+      let content = '';
+      if (isBinary) {
+        const blob = new Blob([buffer]);
+        content = await readFileAsDataUrl(blob as any);
+      } else {
+        content = new TextDecoder().decode(buffer);
+      }
+
+      records.push({
+        repo_id: repoId,
+        path: finalPath,
+        language: isBinary ? 'binary:application/octet-stream' : detectLanguageFromPath(finalPath),
+        content,
+        size_bytes: u8.byteLength,
+        created_by: user.id,
+      });
+
+      gitFiles.push({ path: finalPath, content });
+    }
+  } catch (err) {
+    console.warn('Zip import failed (likely CORS or Private Repo restriction), falling back to README...', err);
   }
 
-  // Create an initial commit
+  // Fallback: If zip is completely empty or errors, make sure we at least have README
+  if (records.length === 0 && readmeContent.trim()) {
+    records.push({
+      repo_id: repoId,
+      path: 'README.md',
+      language: 'markdown',
+      content: readmeContent,
+      size_bytes: readmeContent.length,
+      created_by: user.id,
+    });
+    gitFiles.push({ path: 'README.md', content: readmeContent });
+  }
+
+  // 4. Upsert files to database (chunking safely to avoid range errors if massive)
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+    const chunk = records.slice(i, i + CHUNK_SIZE);
+    const { error: uploadError } = await supabase.from('repo_files').upsert(chunk, {
+      onConflict: 'repo_id,path',
+    });
+    if (uploadError) {
+      console.error('Failed to import chunk:', uploadError);
+    }
+  }
+
+  // 5. Create initial Git commit
+  let gitHash: string | null = null;
+  try {
+    const commitRes = await initGitRepo({
+      repoId,
+      files: gitFiles,
+      author: {
+        name: user.email?.split('@')[0] || 'User',
+        email: user.email || 'user@example.com',
+      },
+    });
+    gitHash = commitRes.hash;
+  } catch (err) {
+    console.error('Failed to initialize or commit Git repo during import:', err);
+  }
+
+  // Insert to repo_commits
   const { error: commitError } = await supabase.from('repo_commits').insert({
-    repo_id: repository.id,
+    repo_id: repoId,
     author_id: user.id,
     message: `Import from GitHub: ${githubUrl}`,
-    files_changed: readmeMd.trim() ? 1 : 0,
+    files_changed: records.length,
+    commit_hash: gitHash,
   });
-
   if (commitError) {
-    console.error('Failed to create import commit:', commitError);
+    console.error('Failed to log import commit to DB:', commitError);
   }
 
   // Log activity

@@ -35,6 +35,8 @@ export type GitHubRepoImportInput = {
   githubUrl: string;
   visibility: 'public' | 'private';
   readmeContent: string;
+  owner: string;
+  defaultBranch: string;
 };
 
 /* ------------------------------------------------------------------ */
@@ -218,4 +220,42 @@ export const fetchGitHubUser = async (): Promise<{
   }
 
   return githubFetch('/user', token);
+};
+
+/**
+ * Fetches the ZIP archive of the repository's specified branch.
+ * Returns the raw binary ArrayBuffer.
+ */
+export const fetchGitHubRepoZip = async (
+  owner: string,
+  repo: string,
+  branch: string,
+  isPublic: boolean,
+): Promise<ArrayBuffer> => {
+  const token = getGitHubToken();
+  if (!token) {
+    throw new Error('No GitHub token available. Sign in with GitHub first.');
+  }
+
+  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/zipball/${branch}`;
+
+  const headers: HeadersInit = {};
+
+  // GitHub's codeload domain rejects browser CORS requests that include custom 
+  // headers like Authorization or X-GitHub-Api-Version. For public repos we can 
+  // safely omit all custom headers to force a 'simple request' and bypass CORS preflight.
+  if (!isPublic) {
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['X-GitHub-Api-Version'] = '2022-11-28';
+  }
+
+  const response = await fetch(url, {
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download repository archive (Status: ${response.status}).`);
+  }
+
+  return response.arrayBuffer();
 };

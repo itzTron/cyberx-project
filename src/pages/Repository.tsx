@@ -267,6 +267,8 @@ const GitHubImportTab = ({
         githubUrl: repo.html_url,
         visibility: repo.private ? 'private' : 'public',
         readmeContent,
+        owner: repo.owner.login,
+        defaultBranch: repo.default_branch || 'main',
       });
       setGithubImportStatus(`✓ Successfully imported "${repo.name}".`);
       await refreshRepositories();
@@ -1103,7 +1105,7 @@ const Repository = () => {
 
                   {/* ══════════════════════════ OVERVIEW ══════════════════════════ */}
                   <TabsContent value="overview" className="space-y-6">
-                    <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+                    <div className="grid gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[380px_1fr]">
                       {/* Repository list */}
                       <Card>
                         <CardHeader className="pb-3">
