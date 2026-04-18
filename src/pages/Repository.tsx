@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -6,6 +6,7 @@ import {
   ArchiveRestore,
   Code,
   Diff,
+  Download,
   Ellipsis,
   Eye,
   EyeOff,
@@ -13,11 +14,17 @@ import {
   FileCode2,
   FolderGit2,
   GitCommitHorizontal,
+  Github,
+  Globe,
+  LoaderCircle,
+  Lock,
   LogOut,
   Pencil,
   PlusCircle,
   RefreshCw,
   Rocket,
+  Search,
+  Star,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -70,7 +77,16 @@ import {
   type HubRepositoryCommit,
   type HubRepositoryFile,
   type RepositoryVisibility,
+  importGitHubRepository,
 } from '@/lib/hubApi';
+import {
+  hasGitHubToken,
+  fetchGitHubRepos,
+  fetchGitHubRepoReadme,
+  type GitHubRepo,
+} from '@/lib/githubApi';
+import { signInWithGitHub } from '@/lib/authApi';
+import { cn } from '@/lib/utils';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -161,11 +177,309 @@ const collectReadmeAssetSources = (markdown: string) => {
 
 const getRepoFileCacheKey = (repoId: string, filePath: string) => `${repoId}::${normalizeRepoPath(filePath)}`;
 
-const repoTabs = new Set(['overview', 'create', 'upload', 'viewer']);
+const repoTabs = new Set(['overview', 'create', 'upload', 'viewer', 'github']);
 
 /* ------------------------------------------------------------------ */
-/*  Component                                                          */
+/*  GitHub Import Tab (sub-component)                                  */
 /* ------------------------------------------------------------------ */
+
+type GitHubImportTabProps = {
+  githubRepos: GitHubRepo[];
+  setGithubRepos: React.Dispatch<React.SetStateAction<GitHubRepo[]>>;
+  isGithubLoading: boolean;
+  setIsGithubLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  githubError: string;
+  setGithubError: React.Dispatch<React.SetStateAction<string>>;
+  githubSearch: string;
+  setGithubSearch: React.Dispatch<React.SetStateAction<string>>;
+  importingRepoId: number | null;
+  setImportingRepoId: React.Dispatch<React.SetStateAction<number | null>>;
+  githubImportStatus: string;
+  setGithubImportStatus: React.Dispatch<React.SetStateAction<string>>;
+  githubFetchedRef: React.MutableRefObject<boolean>;
+  refreshRepositories: () => Promise<any>;
+  refreshActivity: () => Promise<void>;
+};
+
+const GitHubImportTab = ({
+  githubRepos,
+  setGithubRepos,
+  isGithubLoading,
+  setIsGithubLoading,
+  githubError,
+  setGithubError,
+  githubSearch,
+  setGithubSearch,
+  importingRepoId,
+  setImportingRepoId,
+  githubImportStatus,
+  setGithubImportStatus,
+  githubFetchedRef,
+  refreshRepositories,
+  refreshActivity,
+}: GitHubImportTabProps) => {
+  const tokenAvailable = hasGitHubToken();
+
+  const loadGitHubRepos = useCallback(async () => {
+    setIsGithubLoading(true);
+    setGithubError('');
+    try {
+      const repos = await fetchGitHubRepos();
+      setGithubRepos(repos);
+      githubFetchedRef.current = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch GitHub repos.';
+      setGithubError(msg);
+    } finally {
+      setIsGithubLoading(false);
+    }
+  }, [setGithubRepos, setIsGithubLoading, setGithubError, githubFetchedRef]);
+
+  // Auto-fetch on mount if token is available and hasn't fetched yet
+  useEffect(() => {
+    if (tokenAvailable && !githubFetchedRef.current && githubRepos.length === 0 && !isGithubLoading) {
+      void loadGitHubRepos();
+    }
+  }, [tokenAvailable, githubRepos.length, isGithubLoading, loadGitHubRepos]);
+
+  const filteredGithubRepos = useMemo(
+    () =>
+      githubRepos.filter((r) => {
+        const q = githubSearch.trim().toLowerCase();
+        if (!q) return true;
+        return (
+          r.name.toLowerCase().includes(q) ||
+          (r.description || '').toLowerCase().includes(q) ||
+          (r.language || '').toLowerCase().includes(q)
+        );
+      }),
+    [githubRepos, githubSearch],
+  );
+
+  const handleImportRepo = async (repo: GitHubRepo) => {
+    setImportingRepoId(repo.id);
+    setGithubImportStatus('');
+    try {
+      const readmeContent = await fetchGitHubRepoReadme(repo.owner.login, repo.name);
+      await importGitHubRepository({
+        name: repo.name,
+        description: repo.description || '',
+        githubUrl: repo.html_url,
+        visibility: repo.private ? 'private' : 'public',
+        readmeContent,
+      });
+      setGithubImportStatus(`✓ Successfully imported "${repo.name}".`);
+      await refreshRepositories();
+      await refreshActivity();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Import failed.';
+      setGithubImportStatus(msg);
+    } finally {
+      setImportingRepoId(null);
+    }
+  };
+
+  const handleConnectGitHub = async () => {
+    try {
+      await signInWithGitHub();
+    } catch {
+      setGithubError('Unable to connect GitHub. Please try again.');
+    }
+  };
+
+  /* No GitHub token — show connect prompt */
+  if (!tokenAvailable) {
+    return (
+      <Card>
+        <CardContent className="pt-8 pb-8 flex flex-col items-center gap-5 text-center">
+          <div className="h-16 w-16 rounded-full bg-muted/50 flex items-center justify-center">
+            <Github className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-lg font-semibold text-foreground mb-2">Connect your GitHub account</p>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Sign in with GitHub to import your repositories into Cyberspace-X Hub.
+              Your GitHub token is only stored for this browser session.
+            </p>
+          </div>
+          <Button onClick={handleConnectGitHub} className="gap-2">
+            <Github className="h-4 w-4" />
+            Connect GitHub
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      {/* Header + Search */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Github className="h-5 w-5 text-primary" />
+                Your GitHub Repositories
+              </CardTitle>
+              <CardDescription>
+                {githubRepos.length > 0
+                  ? `${githubRepos.length} repositories found`
+                  : 'Fetching your repositories...'}
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadGitHubRepos}
+              disabled={isGithubLoading}
+              className="gap-1.5"
+            >
+              <RefreshCw className={cn('h-4 w-4', isGithubLoading && 'animate-spin')} />
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="github-repo-search"
+              placeholder="Search GitHub repositories..."
+              value={githubSearch}
+              onChange={(e) => setGithubSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
+          {githubError && (
+            <p className="text-sm text-destructive mb-4">{githubError}</p>
+          )}
+          {githubImportStatus && (
+            <p className={cn(
+              'text-sm mb-4',
+              githubImportStatus.startsWith('✓') ? 'text-primary' : 'text-destructive',
+            )}>
+              {githubImportStatus}
+            </p>
+          )}
+
+          {/* Loading skeleton */}
+          {isGithubLoading && githubRepos.length === 0 && (
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-lg border border-border p-4 animate-pulse">
+                  <div className="h-4 bg-muted rounded w-1/3 mb-3" />
+                  <div className="h-3 bg-muted rounded w-2/3 mb-2" />
+                  <div className="flex gap-3 mt-3">
+                    <div className="h-3 bg-muted rounded w-16" />
+                    <div className="h-3 bg-muted rounded w-12" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!isGithubLoading && githubRepos.length === 0 && !githubError && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No GitHub repositories found. Make sure your GitHub account has repositories.
+            </p>
+          )}
+
+          {/* Repo cards */}
+          {filteredGithubRepos.length > 0 && (
+            <div className="space-y-3 max-h-[600px] overflow-auto pr-1">
+              {filteredGithubRepos.map((repo) => (
+                <div
+                  key={repo.id}
+                  className="rounded-lg border border-border bg-card p-4 hover:border-primary/40 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <a
+                          href={repo.html_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-semibold text-primary hover:underline truncate"
+                        >
+                          {repo.full_name}
+                        </a>
+                        <span className={cn(
+                          'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                          repo.private
+                            ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
+                            : 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10',
+                        )}>
+                          {repo.private ? <Lock className="h-2.5 w-2.5" /> : <Globe className="h-2.5 w-2.5" />}
+                          {repo.private ? 'Private' : 'Public'}
+                        </span>
+                        {repo.fork && (
+                          <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            Fork
+                          </span>
+                        )}
+                      </div>
+                      {repo.description && (
+                        <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">
+                          {repo.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-4 mt-2.5 text-xs text-muted-foreground">
+                        {repo.language && (
+                          <span className="flex items-center gap-1">
+                            <span className="h-2.5 w-2.5 rounded-full bg-primary/70" />
+                            {repo.language}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <Star className="h-3 w-3" />
+                          {repo.stargazers_count}
+                        </span>
+                        <span>
+                          Updated {new Date(repo.updated_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 shrink-0"
+                      disabled={importingRepoId !== null}
+                      onClick={() => void handleImportRepo(repo)}
+                    >
+                      {importingRepoId === repo.id ? (
+                        <>
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                          Importing...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-3.5 w-3.5" />
+                          Import
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* No matches */}
+          {!isGithubLoading && githubRepos.length > 0 && filteredGithubRepos.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No repositories match your search.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+};
+
+
 
 const Repository = () => {
   const navigate = useNavigate();
@@ -224,6 +538,15 @@ const Repository = () => {
   const [isCommittingCode, setIsCommittingCode] = useState(false);
   const [editorFiles, setEditorFiles] = useState<HubRepositoryFile[]>([]);
   const [isEditorFilesLoading, setIsEditorFilesLoading] = useState(false);
+
+  /* GitHub import state */
+  const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
+  const [isGithubLoading, setIsGithubLoading] = useState(false);
+  const [githubError, setGithubError] = useState('');
+  const [githubSearch, setGithubSearch] = useState('');
+  const [importingRepoId, setImportingRepoId] = useState<number | null>(null);
+  const [githubImportStatus, setGithubImportStatus] = useState('');
+  const githubFetchedRef = useRef(false);
 
   const editorDetectedLanguage = useMemo(() => {
     const ext = editorFilename.split('.').pop()?.toLowerCase() || '';
@@ -772,6 +1095,10 @@ const Repository = () => {
                     <TabsTrigger value="create">New Repository</TabsTrigger>
                     <TabsTrigger value="upload">Upload Code</TabsTrigger>
                     <TabsTrigger value="viewer">Show Code</TabsTrigger>
+                    <TabsTrigger value="github" className="gap-1.5">
+                      <Github className="h-4 w-4" />
+                      Import from GitHub
+                    </TabsTrigger>
                   </TabsList>
 
                   {/* ══════════════════════════ OVERVIEW ══════════════════════════ */}
@@ -1419,6 +1746,27 @@ const Repository = () => {
                         {repoDataError && <p className="text-sm text-destructive">{repoDataError}</p>}
                       </CardContent>
                     </Card>
+                  </TabsContent>
+
+                  {/* ══════════════════════════ GITHUB IMPORT ══════════════════════════ */}
+                  <TabsContent value="github" className="space-y-6">
+                    <GitHubImportTab
+                      githubRepos={githubRepos}
+                      setGithubRepos={setGithubRepos}
+                      isGithubLoading={isGithubLoading}
+                      setIsGithubLoading={setIsGithubLoading}
+                      githubError={githubError}
+                      setGithubError={setGithubError}
+                      githubSearch={githubSearch}
+                      setGithubSearch={setGithubSearch}
+                      importingRepoId={importingRepoId}
+                      setImportingRepoId={setImportingRepoId}
+                      githubImportStatus={githubImportStatus}
+                      setGithubImportStatus={setGithubImportStatus}
+                      githubFetchedRef={githubFetchedRef}
+                      refreshRepositories={refreshRepositories}
+                      refreshActivity={refreshActivity}
+                    />
                   </TabsContent>
                 </Tabs>
 

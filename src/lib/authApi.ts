@@ -348,6 +348,25 @@ export const signUpUser = async ({ name, email, password }: SignUpPayload): Prom
   };
 };
 
+export const signInWithGitHub = async (): Promise<void> => {
+  const supabase = getAuthClient();
+
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: {
+      scopes: 'repo read:user',
+      redirectTo: `${window.location.origin}/signin`,
+    },
+  });
+
+  if (error) {
+    throw mapSupabaseAuthError({
+      message: error.message,
+      code: error.code,
+    });
+  }
+};
+
 export const signInUser = async ({ email, password }: SignInPayload): Promise<SignInSuccessResponse> => {
   const supabase = getAuthClient();
   const normalizedEmail = normalizeEmail(email);

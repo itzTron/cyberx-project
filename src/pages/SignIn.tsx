@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Check, Eye, EyeOff, Github, LoaderCircle, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AuthApiError, signInUser } from '@/lib/authApi';
+import { AuthApiError, signInUser, signInWithGitHub } from '@/lib/authApi';
+import { extractAndStoreGitHubToken } from '@/lib/githubApi';
+import { getSupabaseClient } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 import Footer from '@/components/Footer';
@@ -15,6 +17,7 @@ const SignIn = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGitHubLoading, setIsGitHubLoading] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [formError, setFormError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -27,6 +30,38 @@ const SignIn = () => {
   const hasEmailValue = normalizedEmail.length > 0;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
   const showEmailError = hasEmailValue && !isEmailValid && !fieldErrors.email;
+
+  /* ---- Handle OAuth callback (GitHub redirect lands back here) ---- */
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          // Capture the GitHub provider_token from the OAuth callback
+          extractAndStoreGitHubToken(session);
+
+          // Resolve username for navigation
+          const fullName =
+            (session.user.user_metadata?.full_name as string | undefined)?.trim() ||
+            (session.user.user_metadata?.name as string | undefined)?.trim() ||
+            '';
+          const emailVal = session.user.email || '';
+          const username =
+            (session.user.user_metadata?.user_name as string | undefined)?.trim() ||
+            (session.user.user_metadata?.preferred_username as string | undefined)?.trim() ||
+            fullName.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') ||
+            emailVal.split('@')[0] || 'dashboard';
+
+          navigate(`/${username}`);
+        }
+      },
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -85,6 +120,23 @@ const SignIn = () => {
     }
   };
 
+  const handleGitHubSignIn = async () => {
+    setFormError('');
+    setIsGitHubLoading(true);
+
+    try {
+      await signInWithGitHub();
+      // The function triggers a redirect — we won't reach here unless there's an error
+    } catch (error) {
+      if (error instanceof AuthApiError) {
+        setFormError(error.message);
+      } else {
+        setFormError('Unable to sign in with GitHub. Please try again.');
+      }
+      setIsGitHubLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
 
@@ -134,6 +186,36 @@ const SignIn = () => {
                 <p className="text-sm text-muted-foreground mt-2">
                   Enter your credentials to sign in.
                 </p>
+              </div>
+
+              {/* ── GitHub OAuth Button ── */}
+              <Button
+                id="github-signin-button"
+                type="button"
+                size="lg"
+                variant="outline"
+                className="w-full mb-5 gap-2.5 border-border bg-muted/30 hover:bg-muted/60 transition-all duration-200"
+                disabled={isGitHubLoading || isSubmitting}
+                onClick={handleGitHubSignIn}
+              >
+                {isGitHubLoading ? (
+                  <LoaderCircle className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Github className="h-5 w-5" />
+                )}
+                {isGitHubLoading ? 'Redirecting to GitHub...' : 'Sign in with GitHub'}
+              </Button>
+
+              {/* ── Divider ── */}
+              <div className="relative mb-5">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-3 text-muted-foreground font-medium">
+                    or continue with email
+                  </span>
+                </div>
               </div>
 
               <form className="space-y-5" onSubmit={handleSubmit} noValidate>

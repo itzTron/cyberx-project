@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/lib/supabase';
+import { clearGitHubToken, fetchGitHubRepoReadme, type GitHubRepoImportInput } from '@/lib/githubApi';
 import JSZip from 'jszip';
 import {
   initGitRepo,
@@ -31,6 +32,8 @@ export type HubRepository = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  github_url: string | null;
+  imported_from_github: boolean;
 };
 
 export type HubRepositoryFile = {
@@ -375,6 +378,8 @@ const getProfileSelectColumns = ({
 const mapRepositoryRecord = (record: any): HubRepository => ({
   ...(record || {}),
   show_in_tool_list: Boolean(record?.show_in_tool_list),
+  github_url: record?.github_url || null,
+  imported_from_github: Boolean(record?.imported_from_github),
 });
 
 const mapRepositoryList = (records: any[] | null | undefined): HubRepository[] => (records || []).map(mapRepositoryRecord);
@@ -2092,6 +2097,8 @@ export const signOutDashboardUser = async () => {
   const supabase = getSupabaseClient();
   const { error } = await supabase.auth.signOut();
 
+  clearGitHubToken();
+
   if (error) {
     throw new Error(error.message);
   }
@@ -2192,4 +2199,90 @@ export const getRepositoryFilesAtCommit = async ({
   commitHash: string;
 }): Promise<GitFileSnapshot[]> => {
   return gitListFilesAtCommit({ repoId, commitHash });
+};
+/* ------------------------------------------------------------------ */
+/*  GitHub repo import                                                 */
+/* ------------------------------------------------------------------ */
+
+export const importGitHubRepository = async ({
+  name,
+  description,
+  githubUrl,
+  visibility,
+  readmeContent,
+}: GitHubRepoImportInput): Promise<HubRepository> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const slug = normalizeRepoSlug(name);
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
+
+  // Check for duplicate
+  const { data: existing } = await supabase
+    .from('repositories')
+    .select('id')
+    .eq('owner_id', user.id)
+    .eq('slug', slug)
+    .maybeSingle();
+
+  if (existing) {
+    throw new Error(`A repository named "${name}" already exists. Rename or delete it first.`);
+  }
+
+  const readmeMd = readmeContent || '';
+
+  const { data, error } = await supabase
+    .from('repositories')
+    .insert({
+      owner_id: user.id,
+      name,
+      slug,
+      description: description || '',
+      visibility,
+      readme_md: readmeMd,
+      github_url: githubUrl,
+      imported_from_github: true,
+    })
+    .select(repositorySelectColumns as any)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const repository = mapRepositoryRecord(data);
+
+  // Store the README as an initial file
+  if (readmeMd.trim()) {
+    await upsertRepositoryFile({
+      supabase,
+      repoId: repository.id,
+      userId: user.id,
+      filePath: 'README.md',
+      content: readmeMd,
+    });
+  }
+
+  // Create an initial commit
+  const { error: commitError } = await supabase.from('repo_commits').insert({
+    repo_id: repository.id,
+    author_id: user.id,
+    message: `Import from GitHub: ${githubUrl}`,
+    files_changed: readmeMd.trim() ? 1 : 0,
+  });
+
+  if (commitError) {
+    console.error('Failed to create import commit:', commitError);
+  }
+
+  // Log activity
+  await pushActivity({
+    userId: user.id,
+    email: user.email || '',
+    activityType: 'github_import',
+    context: {
+      repository_name: name,
+      github_url: githubUrl,
+    },
+  });
+
+  return repository;
 };
