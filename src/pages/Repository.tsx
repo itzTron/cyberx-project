@@ -1521,7 +1521,7 @@ const Repository = () => {
 
                           <div>
                             <label htmlFor="editor-code" className="block text-sm text-foreground mb-2">Code</label>
-                            <div className="relative rounded-md border border-border overflow-hidden" style={{ background: '#282c34' }}>
+                            <div className="relative rounded-md border border-border overflow-hidden" style={{ background: '#282c34', '--editor-padding': '0.75rem', '--line-numbers-width': '4.25rem', boxSizing: 'border-box' } as React.CSSProperties}>
                               {/* IDE-style overlay editor: syntax highlight behind transparent textarea */}
                               <div className="relative min-h-[320px] max-h-[600px] overflow-auto">
                                 {/* Syntax-highlighted layer (behind) */}
@@ -1532,14 +1532,15 @@ const Repository = () => {
                                     showLineNumbers
                                     customStyle={{
                                       margin: 0,
-                                      padding: '0.75rem',
+                                      padding: `var(--editor-padding)`,
                                       background: 'transparent',
-                                      fontSize: '0.82rem',
+                                      fontSize: '14px',
                                       lineHeight: '1.5',
                                       minHeight: '100%',
                                       overflow: 'visible',
                                       whiteSpace: 'pre',
                                       wordBreak: 'keep-all',
+                                      boxSizing: 'border-box',
                                     }}
                                     lineNumberStyle={{
                                       minWidth: '2.5em',
@@ -1549,7 +1550,7 @@ const Repository = () => {
                                     }}
                                     codeTagProps={{
                                       style: {
-                                        fontSize: '0.82rem',
+                                        fontSize: '14px',
                                         lineHeight: '1.5',
                                         fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
                                       },
@@ -1565,19 +1566,21 @@ const Repository = () => {
                                   onChange={(e) => setEditorCode(e.target.value)}
                                   placeholder="Write your code here..."
                                   spellCheck={false}
-                                  className="relative w-full min-h-[320px] resize-y font-mono focus:outline-none"
-                                  style={{
+                                  className="relative w-full min-h-[320px] font-mono focus:outline-none" // removed resize-y to prevent height desync
+                                    style={{
                                     background: 'transparent',
                                     color: 'transparent',
                                     caretColor: '#e5e7eb',
-                                    fontSize: '0.82rem',
+                                    fontSize: '14px',
                                     lineHeight: '1.5',
-                                    padding: '0.75rem 0.75rem 0.75rem 4.5rem',
+                                    padding: `var(--editor-padding) var(--editor-padding) var(--editor-padding) calc(var(--line-numbers-width) + var(--editor-padding))`,
                                     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
                                     whiteSpace: 'pre',
                                     overflowWrap: 'normal',
                                     wordBreak: 'keep-all',
                                     WebkitTextFillColor: 'transparent',
+                                    boxSizing: 'border-box',
+                                    resize: 'none',
                                   } as React.CSSProperties}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Tab') {
