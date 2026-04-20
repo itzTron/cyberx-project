@@ -28,6 +28,9 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import CodeMirror from '@uiw/react-codemirror';
+import { loadLanguage } from '@uiw/codemirror-extensions-langs';
+import { okaidia } from '@uiw/codemirror-theme-okaidia';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -540,7 +543,6 @@ const Repository = () => {
   const [isCommittingCode, setIsCommittingCode] = useState(false);
   const [editorFiles, setEditorFiles] = useState<HubRepositoryFile[]>([]);
   const [isEditorFilesLoading, setIsEditorFilesLoading] = useState(false);
-  const editorLineNumbersRef = useRef<HTMLDivElement | null>(null);
 
   /* GitHub import state */
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
@@ -565,14 +567,49 @@ const Repository = () => {
     return langMap[ext] || (ext ? ext : 'text');
   }, [editorFilename]);
 
+  const editorCodeMirrorLanguage = useMemo(
+    () => (
+      {
+        typescript: 'ts',
+        tsx: 'tsx',
+        javascript: 'js',
+        jsx: 'jsx',
+        json: 'json',
+        html: 'html',
+        css: 'css',
+        scss: 'scss',
+        markdown: 'markdown',
+        python: 'python',
+        java: 'java',
+        c: 'c',
+        cpp: 'cpp',
+        csharp: 'cs',
+        go: 'go',
+        rust: 'rs',
+        sql: 'sql',
+        yaml: 'yaml',
+        xml: 'xml',
+        bash: 'bash',
+        text: 'text',
+        ruby: 'rb',
+        php: 'php',
+        swift: 'swift',
+        kotlin: 'kt',
+        dart: 'dart',
+        r: 'r',
+      }[editorDetectedLanguage] || 'text'
+    ) as Parameters<typeof loadLanguage>[0],
+    [editorDetectedLanguage],
+  );
+
+  const editorLanguageExtension = useMemo(
+    () => loadLanguage(editorCodeMirrorLanguage),
+    [editorCodeMirrorLanguage],
+  );
+
   const editorLineCount = useMemo(
     () => Math.max(editorCode.split('\n').length, 1),
     [editorCode],
-  );
-
-  const editorLineNumbers = useMemo(
-    () => Array.from({ length: editorLineCount }, (_, index) => index + 1).join('\n'),
-    [editorLineCount],
   );
 
   const filteredRepositories = useMemo(
@@ -1532,72 +1569,25 @@ const Repository = () => {
 
                           <div>
                             <label htmlFor="editor-code" className="block text-sm text-foreground mb-2">Code</label>
-                            <div className="relative rounded-md border border-border overflow-hidden" style={{ background: '#282c34', '--editor-padding': '0.75rem', '--line-numbers-width': '4.25rem', boxSizing: 'border-box' } as React.CSSProperties}>
-                              <div className="flex h-[420px]">
-                                <div
-                                  aria-hidden="true"
-                                  ref={editorLineNumbersRef}
-                                  className="shrink-0 overflow-hidden border-r border-white/5 bg-black/10 text-right text-[#6b7280]"
-                                  style={{ width: 'var(--line-numbers-width)' }}
-                                >
-                                  <pre
-                                    className="select-none"
-                                    style={{
-                                      margin: 0,
-                                      padding: `var(--editor-padding) 0.75rem`,
-                                      fontSize: '14px',
-                                      lineHeight: '1.5',
-                                      fontFamily: '"JetBrains Mono", monospace',
-                                      whiteSpace: 'pre',
-                                    }}
-                                  >
-                                    {editorLineNumbers}
-                                  </pre>
-                                </div>
-                                <textarea
-                                  id="editor-code"
-                                  value={editorCode}
-                                  onChange={(e) => setEditorCode(e.target.value)}
-                                  placeholder="Write your code here..."
-                                  spellCheck={false}
-                                  wrap="off"
-                                  className="min-w-0 flex-1 font-mono focus:outline-none"
-                                  style={{
-                                    background: 'transparent',
-                                    color: '#e5e7eb',
-                                    caretColor: '#e5e7eb',
-                                    fontSize: '14px',
-                                    lineHeight: '1.5',
-                                    padding: `var(--editor-padding)`,
-                                    fontFamily: '"JetBrains Mono", monospace',
-                                    whiteSpace: 'pre',
-                                    overflowWrap: 'normal',
-                                    wordBreak: 'normal',
-                                    tabSize: 2,
-                                    boxSizing: 'border-box',
-                                    resize: 'none',
-                                    overflow: 'auto',
-                                  } as React.CSSProperties}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Tab') {
-                                      e.preventDefault();
-                                      const target = e.currentTarget;
-                                      const start = target.selectionStart;
-                                      const end = target.selectionEnd;
-                                      const nextValue = target.value.substring(0, start) + '  ' + target.value.substring(end);
-                                      setEditorCode(nextValue);
-                                      requestAnimationFrame(() => {
-                                        target.selectionStart = target.selectionEnd = start + 2;
-                                      });
-                                    }
-                                  }}
-                                  onScroll={(e) => {
-                                    if (editorLineNumbersRef.current) {
-                                      editorLineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
-                                    }
-                                  }}
-                                />
-                              </div>
+                            <div className="overflow-hidden rounded-md border border-border">
+                              <CodeMirror
+                                id="editor-code"
+                                value={editorCode}
+                                height="420px"
+                                placeholder="Write your code here..."
+                                theme={okaidia}
+                                className="repository-code-editor text-sm"
+                                basicSetup={{
+                                  tabSize: 2,
+                                  lineNumbers: true,
+                                  foldGutter: false,
+                                  dropCursor: false,
+                                  allowMultipleSelections: false,
+                                }}
+                                indentWithTab
+                                extensions={editorLanguageExtension ? [editorLanguageExtension] : []}
+                                onChange={(value) => setEditorCode(value)}
+                              />
                               <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 border-t border-border text-xs text-muted-foreground">
                                 <span>
                                   {editorLineCount} line{editorLineCount !== 1 ? 's' : ''}

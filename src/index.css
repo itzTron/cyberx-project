@@ -225,6 +225,27 @@
   animation: preloader-logo-pulse 2.5s ease-in-out infinite;
 }
 
+.repository-code-editor .cm-editor {
+  height: 100%;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.repository-code-editor .cm-scroller,
+.repository-code-editor .cm-gutters {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+.repository-code-editor .cm-scroller {
+  overflow: auto;
+}
+
+.repository-code-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
 @keyframes preloader-logo-pulse {
   0%, 100% {
     filter:
