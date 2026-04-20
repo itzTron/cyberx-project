@@ -540,6 +540,7 @@ const Repository = () => {
   const [isCommittingCode, setIsCommittingCode] = useState(false);
   const [editorFiles, setEditorFiles] = useState<HubRepositoryFile[]>([]);
   const [isEditorFilesLoading, setIsEditorFilesLoading] = useState(false);
+  const editorLineNumbersRef = useRef<HTMLDivElement | null>(null);
 
   /* GitHub import state */
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
@@ -563,6 +564,16 @@ const Repository = () => {
     };
     return langMap[ext] || (ext ? ext : 'text');
   }, [editorFilename]);
+
+  const editorLineCount = useMemo(
+    () => Math.max(editorCode.split('\n').length, 1),
+    [editorCode],
+  );
+
+  const editorLineNumbers = useMemo(
+    () => Array.from({ length: editorLineCount }, (_, index) => index + 1).join('\n'),
+    [editorLineCount],
+  );
 
   const filteredRepositories = useMemo(
     () =>
@@ -1522,92 +1533,74 @@ const Repository = () => {
                           <div>
                             <label htmlFor="editor-code" className="block text-sm text-foreground mb-2">Code</label>
                             <div className="relative rounded-md border border-border overflow-hidden" style={{ background: '#282c34', '--editor-padding': '0.75rem', '--line-numbers-width': '4.25rem', boxSizing: 'border-box' } as React.CSSProperties}>
-                              {/* IDE-style overlay editor: syntax highlight behind transparent textarea */}
-                              <div className="relative min-h-[320px] max-h-[600px] overflow-auto">
-                                {/* Syntax-highlighted layer (behind) */}
-                                <div aria-hidden="true" className="absolute inset-0 pointer-events-none overflow-hidden">
-                                  <SyntaxHighlighter
-                                    language={editorDetectedLanguage}
-                                    style={oneDark}
-                                    showLineNumbers
-                                    customStyle={{
+                              <div className="flex h-[420px]">
+                                <div
+                                  aria-hidden="true"
+                                  ref={editorLineNumbersRef}
+                                  className="shrink-0 overflow-hidden border-r border-white/5 bg-black/10 text-right text-[#6b7280]"
+                                  style={{ width: 'var(--line-numbers-width)' }}
+                                >
+                                  <pre
+                                    className="select-none"
+                                    style={{
                                       margin: 0,
-                                      padding: `var(--editor-padding)`,
-                                      background: 'transparent',
+                                      padding: `var(--editor-padding) 0.75rem`,
                                       fontSize: '14px',
                                       lineHeight: '1.5',
-                                      minHeight: '100%',
-                                      overflow: 'visible',
+                                      fontFamily: '"JetBrains Mono", monospace',
                                       whiteSpace: 'pre',
-                                      wordBreak: 'keep-all',
-                                      boxSizing: 'border-box',
-                                    }}
-                                    lineNumberStyle={{
-                                      minWidth: '2.5em',
-                                      color: '#6b7280',
-                                      userSelect: 'none',
-                                      paddingRight: '1rem',
-                                    }}
-                                    codeTagProps={{
-                                      style: {
-                                        fontSize: '14px',
-                                        lineHeight: '1.5',
-                                        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-                                      },
                                     }}
                                   >
-                                    {editorCode || ' '}
-                                  </SyntaxHighlighter>
+                                    {editorLineNumbers}
+                                  </pre>
                                 </div>
-                                {/* Transparent textarea (on top) */}
                                 <textarea
                                   id="editor-code"
                                   value={editorCode}
                                   onChange={(e) => setEditorCode(e.target.value)}
                                   placeholder="Write your code here..."
                                   spellCheck={false}
-                                  className="relative w-full min-h-[320px] font-mono focus:outline-none" // removed resize-y to prevent height desync
-                                    style={{
+                                  wrap="off"
+                                  className="min-w-0 flex-1 font-mono focus:outline-none"
+                                  style={{
                                     background: 'transparent',
-                                    color: 'transparent',
+                                    color: '#e5e7eb',
                                     caretColor: '#e5e7eb',
                                     fontSize: '14px',
                                     lineHeight: '1.5',
-                                    padding: `var(--editor-padding) var(--editor-padding) var(--editor-padding) calc(var(--line-numbers-width) + var(--editor-padding))`,
-                                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                                    padding: `var(--editor-padding)`,
+                                    fontFamily: '"JetBrains Mono", monospace',
                                     whiteSpace: 'pre',
                                     overflowWrap: 'normal',
-                                    wordBreak: 'keep-all',
-                                    WebkitTextFillColor: 'transparent',
+                                    wordBreak: 'normal',
+                                    tabSize: 2,
                                     boxSizing: 'border-box',
                                     resize: 'none',
+                                    overflow: 'auto',
                                   } as React.CSSProperties}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Tab') {
                                       e.preventDefault();
-                                      const target = e.target as HTMLTextAreaElement;
+                                      const target = e.currentTarget;
                                       const start = target.selectionStart;
                                       const end = target.selectionEnd;
-                                      const newValue = editorCode.substring(0, start) + '  ' + editorCode.substring(end);
-                                      setEditorCode(newValue);
+                                      const nextValue = target.value.substring(0, start) + '  ' + target.value.substring(end);
+                                      setEditorCode(nextValue);
                                       requestAnimationFrame(() => {
                                         target.selectionStart = target.selectionEnd = start + 2;
                                       });
                                     }
                                   }}
                                   onScroll={(e) => {
-                                    const target = e.target as HTMLTextAreaElement;
-                                    const highlightLayer = target.previousElementSibling as HTMLElement;
-                                    if (highlightLayer) {
-                                      highlightLayer.scrollTop = target.scrollTop;
-                                      highlightLayer.scrollLeft = target.scrollLeft;
+                                    if (editorLineNumbersRef.current) {
+                                      editorLineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
                                     }
                                   }}
                                 />
                               </div>
                               <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 border-t border-border text-xs text-muted-foreground">
                                 <span>
-                                  {editorCode.split('\n').length} line{editorCode.split('\n').length !== 1 ? 's' : ''}
+                                  {editorLineCount} line{editorLineCount !== 1 ? 's' : ''}
                                   {' · '}
                                   {new TextEncoder().encode(editorCode).length} bytes
                                 </span>
