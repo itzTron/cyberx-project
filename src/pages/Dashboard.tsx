@@ -488,69 +488,8 @@ const Dashboard = () => {
                         </div>
                       </CardContent>
                     </Card>
-
-                    {/* Recent Activity */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-xl flex items-center gap-2">
-                          <Clock3 className="h-5 w-5 text-primary" />
-                          Recent Activity
-                        </CardTitle>
-                        <CardDescription>Your latest activity events.</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        {activityLogs.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">No activity yet.</p>
-                        ) : (
-                          <div className="space-y-2 max-h-[400px] overflow-auto pr-1">
-                            {activityLogs.slice(0, 15).map((log) => (
-                              <div key={log.id} className="rounded-md border border-border p-3 text-sm">
-                                <p className="text-foreground">{log.activity_type}</p>
-                                <p className="text-xs text-muted-foreground mt-1">{formatDateTime(log.created_at)}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    {/* Quick Actions */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Quick Actions</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-wrap gap-3">
-                          <Button asChild variant="outline">
-                            <Link to="/repository?tab=create">
-                              <FolderGit2 className="h-4 w-4 mr-2" />
-                              New Repository
-                            </Link>
-                          </Button>
-                          <Button asChild variant="outline">
-                            <Link to="/repository?tab=upload">
-                              Upload Code
-                            </Link>
-                          </Button>
-                          <Button asChild variant="outline">
-                            <Link to="/repository?tab=overview">
-                              View Repositories
-                            </Link>
-                          </Button>
-                          <Button asChild variant="outline">
-                            <Link to="/profile">
-                              Edit Profile
-                            </Link>
-                          </Button>
-                          <Button asChild variant="outline">
-                            <Link to="/activity">
-                              Activity Log
-                            </Link>
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
                   </TabsContent>
+
 
                   {/* ══════════════════════════ PROFILE.MD ══════════════════════════ */}
                   <TabsContent value="profile">
