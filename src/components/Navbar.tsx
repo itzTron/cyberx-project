@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Clock3, FileCode2, FolderGit2, LogOut, Menu, PlusCircle, Repeat, Upload, User, UserPlus, X } from 'lucide-react';
+import { Bot, ChevronDown, Clock3, FileCode2, FolderGit2, LogOut, Menu, PlusCircle, Repeat, Upload, User, UserPlus, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,11 +17,12 @@ import {
 import { getCurrentUserProfile, signOutDashboardUser, type HubUserProfile } from '@/lib/hubApi';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
-const navLinks = [
+const navLinks: { href: string; label: string; icon?: React.ReactNode }[] = [
   { href: '/', label: 'Home' },
   { href: '/features', label: 'Features' },
   { href: '/tools', label: 'Tools' },
   { href: '/dashboard', label: 'Hub' },
+  { href: '/tron', label: 'Tron', icon: <Bot className="h-3.5 w-3.5" /> },
   { href: '/download', label: 'Download' },
   { href: '/docs', label: 'Docs' },
   { href: '/contact', label: 'Contact' },
@@ -34,6 +35,7 @@ const reservedTopLevelRoutes = new Set([
   'repository',
   'profile',
   'activity',
+  'tron',
   'download',
   'docs',
   'contact',
@@ -73,6 +75,7 @@ const Navbar = () => {
           location.pathname === '/repository' ||
           location.pathname === '/profile' ||
           location.pathname === '/activity' ||
+          location.pathname === '/tron' ||
           isUsernameRoute
         );
       }
@@ -166,12 +169,13 @@ const Navbar = () => {
               <Link
                 key={link.href}
                 to={link.href}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 inline-flex items-center gap-1.5 ${
                   isLinkActive(link.href)
                     ? 'text-primary bg-primary/10'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 }`}
               >
+                {link.icon && <span className="shrink-0">{link.icon}</span>}
                 {link.label}
               </Link>
             ))}
@@ -336,12 +340,13 @@ const Navbar = () => {
                   key={link.href}
                   to={link.href}
                   onClick={() => setIsOpen(false)}
-                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-all inline-flex items-center gap-2 ${
                     isLinkActive(link.href)
                       ? 'text-primary bg-primary/10'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
                 >
+                  {link.icon && <span className="shrink-0">{link.icon}</span>}
                   {link.label}
                 </Link>
               ))}
