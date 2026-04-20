@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import {
   Archive,
   ArchiveRestore,
+  Bot,
   Code,
   Diff,
   Download,
@@ -89,6 +90,7 @@ import {
   type GitHubRepo,
 } from '@/lib/githubApi';
 import { signInWithGitHub } from '@/lib/authApi';
+import { runRepositoryAgent, type RepoAgentAction, type RepoAgentMemory } from '@/lib/repoAgent';
 import { cn } from '@/lib/utils';
 
 /* ------------------------------------------------------------------ */
@@ -543,6 +545,14 @@ const Repository = () => {
   const [isCommittingCode, setIsCommittingCode] = useState(false);
   const [editorFiles, setEditorFiles] = useState<HubRepositoryFile[]>([]);
   const [isEditorFilesLoading, setIsEditorFilesLoading] = useState(false);
+  const [agentRepoId, setAgentRepoId] = useState('');
+  const [agentPrompt, setAgentPrompt] = useState('');
+  const [agentMessages, setAgentMessages] = useState<
+    Array<{ id: string; role: 'user' | 'assistant'; content: string; steps?: string[] }>
+  >([]);
+  const [agentPendingAction, setAgentPendingAction] = useState<RepoAgentAction | null>(null);
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const [agentMemories, setAgentMemories] = useState<Record<string, RepoAgentMemory>>({});
 
   /* GitHub import state */
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
@@ -620,6 +630,10 @@ const Repository = () => {
         return repo.name.toLowerCase().includes(query) || repo.description.toLowerCase().includes(query);
       }),
     [repositories, repoSearch],
+  );
+  const pushableRepoIds = useMemo(
+    () => new Set(pushableRepositories.map((repo) => repo.id)),
+    [pushableRepositories],
   );
 
   const selectedRepository = repositories.find((repository) => repository.id === selectedRepoId) || null;
@@ -1081,6 +1095,131 @@ const Repository = () => {
       .catch(() => setEditorFiles([]))
       .finally(() => setIsEditorFilesLoading(false));
   }, [editorRepoId]);
+
+  useEffect(() => {
+    if (agentRepoId && repositories.some((repo) => repo.id === agentRepoId)) {
+      return;
+    }
+    const fallbackRepoId = selectedRepoId || pushableRepositories[0]?.id || repositories[0]?.id || '';
+    setAgentRepoId(fallbackRepoId);
+  }, [agentRepoId, pushableRepositories, repositories, selectedRepoId]);
+
+  useEffect(() => {
+    setAgentPendingAction(null);
+  }, [agentRepoId]);
+
+  const appendAgentMessage = useCallback(
+    (message: { role: 'user' | 'assistant'; content: string; steps?: string[] }) => {
+      setAgentMessages((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          ...message,
+        },
+      ]);
+    },
+    [],
+  );
+
+  const runAgentRequest = useCallback(
+    async ({ prompt, forcedAction }: { prompt: string; forcedAction?: RepoAgentAction }) => {
+      if (!agentRepoId) {
+        appendAgentMessage({
+          role: 'assistant',
+          content: 'Choose a repository first.',
+          steps: ['Select a repository in the AI agent panel.'],
+        });
+        return;
+      }
+
+      setIsAgentRunning(true);
+      try {
+        const memory = agentMemories[agentRepoId] || { currentRepoId: agentRepoId, recentFiles: [] };
+        const result = await runRepositoryAgent({
+          userInput: prompt,
+          repoId: agentRepoId,
+          repositories,
+          pushableRepoIds,
+          memory,
+          forcedAction,
+        });
+        setAgentMemories((current) => ({
+          ...current,
+          [agentRepoId]: result.memory,
+        }));
+
+        if (result.kind === 'confirmation_required') {
+          setAgentPendingAction(result.action);
+          appendAgentMessage({
+            role: 'assistant',
+            content: `${result.response}\n\n${result.action.preview}`,
+            steps: result.steps,
+          });
+          return;
+        }
+
+        appendAgentMessage({
+          role: 'assistant',
+          content: result.response,
+          steps: result.steps,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to run repository agent.';
+        const normalizedMessage = message.toLowerCase();
+        const isRateLimited = normalizedMessage.includes('(429)') || normalizedMessage.includes('rate-limit');
+        const isAuthIssue =
+          normalizedMessage.includes('(401)') ||
+          normalizedMessage.includes('(403)') ||
+          normalizedMessage.includes('missing vite_openrouter_api_key') ||
+          normalizedMessage.includes('invalid api key') ||
+          normalizedMessage.includes('unauthorized');
+
+        appendAgentMessage({
+          role: 'assistant',
+          content: message,
+          steps: isRateLimited
+            ? [
+                'Free model is temporarily rate-limited upstream.',
+                'Retry in a few seconds or switch VITE_OPENROUTER_MODEL / VITE_OPENROUTER_FALLBACK_MODELS.',
+              ]
+            : isAuthIssue
+              ? ['Check VITE_OPENROUTER_API_KEY in .env and restart the dev server.']
+              : ['Retry and verify model availability in OpenRouter.'],
+        });
+      } finally {
+        setIsAgentRunning(false);
+      }
+    },
+    [agentMemories, agentRepoId, appendAgentMessage, pushableRepoIds, repositories],
+  );
+
+  const handleAgentPromptSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const prompt = agentPrompt.trim();
+    if (!prompt) return;
+    setAgentPrompt('');
+    setAgentPendingAction(null);
+    appendAgentMessage({ role: 'user', content: prompt });
+    await runAgentRequest({ prompt });
+  };
+
+  const handleAgentConfirm = async () => {
+    if (!agentPendingAction) return;
+    const action = agentPendingAction;
+    setAgentPendingAction(null);
+    appendAgentMessage({ role: 'user', content: `Confirm action: ${action.tool}` });
+    await runAgentRequest({ prompt: action.userInput, forcedAction: action });
+  };
+
+  const handleAgentCancel = () => {
+    if (!agentPendingAction) return;
+    setAgentPendingAction(null);
+    appendAgentMessage({
+      role: 'assistant',
+      content: 'Cancelled pending write action.',
+      steps: ['Edit your request to continue without this change.'],
+    });
+  };
 
   const canConfirmDelete =
     Boolean(deleteTargetRepository) && deleteRepositoryInput.trim() === deleteTargetRepository?.name;
@@ -1615,6 +1754,97 @@ const Repository = () => {
                             {isCommittingCode ? 'Committing...' : 'Commit Code'}
                           </Button>
                         </form>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="mt-6">
+                      <CardHeader>
+                        <CardTitle className="text-xl flex items-center gap-2">
+                          <Bot className="h-5 w-5 text-primary" />
+                          AI Repository Agent
+                        </CardTitle>
+                        <CardDescription>
+                          Tool-driven repository assistant with selective context loading and safe commit confirmation.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div>
+                          <label htmlFor="agent-repo" className="block text-sm text-foreground mb-2">Repository</label>
+                          <select
+                            id="agent-repo"
+                            value={agentRepoId}
+                            onChange={(event) => setAgentRepoId(event.target.value)}
+                            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                            disabled={isAgentRunning}
+                          >
+                            <option value="">Select repository</option>
+                            {repositories.map((repo) => (
+                              <option key={repo.id} value={repo.id}>
+                                {repo.name} {pushableRepoIds.has(repo.id) ? '(write)' : '(read)'}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <form onSubmit={handleAgentPromptSubmit} className="space-y-3">
+                          <div>
+                            <label htmlFor="agent-prompt" className="block text-sm text-foreground mb-2">Request</label>
+                            <Textarea
+                              id="agent-prompt"
+                              value={agentPrompt}
+                              onChange={(event) => setAgentPrompt(event.target.value)}
+                              placeholder="Example: Find auth middleware usage, show recent commits, and propose a safe refactor plan."
+                              className="min-h-[110px]"
+                              disabled={isAgentRunning}
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="submit" disabled={isAgentRunning || !agentPrompt.trim()}>
+                              {isAgentRunning ? 'Running Agent...' : 'Run Agent'}
+                            </Button>
+                            {agentPendingAction && (
+                              <>
+                                <Button type="button" variant="outline" onClick={() => void handleAgentConfirm()} disabled={isAgentRunning}>
+                                  Confirm Pending Commit
+                                </Button>
+                                <Button type="button" variant="ghost" onClick={handleAgentCancel} disabled={isAgentRunning}>
+                                  Cancel Pending Commit
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </form>
+
+                        <div className="rounded-md border border-border bg-muted/20 max-h-[420px] overflow-auto p-3 space-y-3">
+                          {agentMessages.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              No agent messages yet. Add an instruction to start.
+                            </p>
+                          ) : (
+                            agentMessages.map((message) => (
+                              <div
+                                key={message.id}
+                                className={`rounded-md border px-3 py-2 ${
+                                  message.role === 'user'
+                                    ? 'border-primary/40 bg-primary/10'
+                                    : 'border-border bg-background'
+                                }`}
+                              >
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                                  {message.role === 'user' ? 'You' : 'Agent'}
+                                </p>
+                                <p className="text-sm whitespace-pre-wrap text-foreground">{message.content}</p>
+                                {message.steps && message.steps.length > 0 && (
+                                  <ol className="mt-2 list-decimal pl-5 space-y-1 text-sm text-foreground">
+                                    {message.steps.map((step, index) => (
+                                      <li key={`${message.id}-step-${index}`}>{step}</li>
+                                    ))}
+                                  </ol>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   </TabsContent>
