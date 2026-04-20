@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check, Eye, EyeOff, LoaderCircle, ShieldPlus, UserPlus } from 'lucide-react';
+import { Github } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { getSupportedEmailDomains, validateSignUpEmail } from '@/lib/emailValidation';
-import { AuthApiError, signUpUser } from '@/lib/authApi';
+import { AuthApiError, signInWithGitHub, signUpUser } from '@/lib/authApi';
 
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
@@ -20,6 +21,8 @@ const SignUp = () => {
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [formError, setFormError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isGithubLoading, setIsGithubLoading] = useState(false);
+  const [githubError, setGithubError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{
     name?: string;
     email?: string;
@@ -101,6 +104,19 @@ const SignUp = () => {
     }
   };
 
+  const handleGitHubSignUp = async () => {
+    setGithubError('');
+    setIsGithubLoading(true);
+    try {
+      await signInWithGitHub();
+      // OAuth redirects the browser — no further action needed here
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'GitHub sign-up failed. Please try again.';
+      setGithubError(message);
+      setIsGithubLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
 
@@ -150,6 +166,40 @@ const SignUp = () => {
                   <p className="text-sm text-muted-foreground mt-2">
                     Fill in your details to get started. Only Gmail and Outlook family addresses are allowed.
                   </p>
+              </div>
+
+              {/* GitHub OAuth */}
+              <Button
+                id="signup-github"
+                type="button"
+                variant="outline"
+                size="lg"
+                className="w-full gap-3 border-border hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                onClick={() => void handleGitHubSignUp()}
+                disabled={isGithubLoading || isSubmitting}
+              >
+                {isGithubLoading ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Github className="h-4 w-4" />
+                )}
+                {isGithubLoading ? 'Redirecting to GitHub...' : 'Sign up with GitHub'}
+              </Button>
+
+              {githubError && (
+                <p className="text-sm text-destructive mt-2">{githubError}</p>
+              )}
+
+              {/* Divider */}
+              <div className="relative my-5">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="bg-card px-3 text-muted-foreground font-mono tracking-widest uppercase">
+                    or sign up with email
+                  </span>
+                </div>
               </div>
 
               <form className="space-y-5" onSubmit={handleSubmit} noValidate>
