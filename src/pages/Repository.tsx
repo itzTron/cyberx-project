@@ -1419,13 +1419,16 @@ const Repository = () => {
                                   type="button"
                                   onClick={() => {
                                     void loadFileContent(file.path);
-                                    setActiveTab('viewer');
+                                    handleTabChange('viewer');
                                   }}
-                                  className="w-full rounded-md border border-border p-2 text-left hover:border-primary/50 hover:bg-muted/40"
+                                  className="w-full rounded-md border border-border p-2 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
                                 >
                                   <div className="flex items-center justify-between">
                                     <p className="text-sm text-foreground truncate">{file.path}</p>
-                                    <p className="text-xs text-muted-foreground">{formatBytes(file.size_bytes)}</p>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-xs text-muted-foreground">{formatBytes(file.size_bytes)}</p>
+                                      <Eye className="h-3 w-3 text-muted-foreground shrink-0" />
+                                    </div>
                                   </div>
                                 </button>
                               ))}
@@ -1894,11 +1897,34 @@ const Repository = () => {
                           <div className="rounded-md border border-border overflow-hidden">
                             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 bg-muted/30">
                               <p className="text-sm font-medium text-foreground truncate">{selectedFilePath || 'No file selected'}</p>
-                              {selectedFileContent && (
-                                <p className="text-xs text-muted-foreground">
-                                  {selectedFileContent.language} | {formatBytes(selectedFileContent.size_bytes)}
-                                </p>
-                              )}
+                              <div className="flex items-center gap-3">
+                                {selectedFileContent && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {selectedFileContent.language} | {formatBytes(selectedFileContent.size_bytes)}
+                                  </p>
+                                )}
+                                {selectedFileContent && !selectedFileContent.language.startsWith('binary:') && pushableRepoIds.has(selectedRepoId) && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 gap-1.5 text-xs border-primary/40 text-primary hover:bg-primary/10"
+                                    onClick={() => {
+                                      setEditorRepoId(selectedRepoId);
+                                      setEditorFilename(selectedFilePath);
+                                      setEditorCode(selectedFileContent.content || '');
+                                      setEditorCommitMessage(`Update ${selectedFilePath}`);
+                                      handleTabChange('upload');
+                                      // Scroll to CodeFile editor after tab switch
+                                      setTimeout(() => {
+                                        document.getElementById('editor-code')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                      }, 150);
+                                    }}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    Edit in CodeFile
+                                  </Button>
+                                )}
+                              </div>
                             </div>
 
                             {isFileLoading ? (
