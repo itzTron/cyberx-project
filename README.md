@@ -4,12 +4,13 @@
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Supabase-Backend-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
+  <img src="https://img.shields.io/badge/OpenRouter-AI-FF6B35?logo=openai&logoColor=white" alt="OpenRouter" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
 </p>
 
 # 🛡️ Cyberspace-X 2.0
 
-A full-featured cybersecurity platform built with **Vite + React + TypeScript**. Cyberspace-X 2.0 provides a focused suite of security tools for network analysis, threat detection, and secure operational workflows — complete with a GitHub-style hub for code repositories, user profiles, and activity tracking.
+A full-featured cybersecurity platform built with **Vite + React + TypeScript**. Cyberspace-X 2.0 provides a focused suite of security tools for network analysis, threat detection, and secure operational workflows — complete with a GitHub-style hub for code repositories, user profiles, activity tracking, and an **AI-powered repository agent named Tron**.
 
 ---
 
@@ -21,13 +22,47 @@ A full-featured cybersecurity platform built with **Vite + React + TypeScript**.
 | **Hub / Dashboard** | GitHub-style workspace — create repositories, upload code, view commits, manage files |
 | **Git VCS** | Real Git-compatible version control — SHA-1 commit hashes, branches, merge, file-level diffs |
 | **CodeFile Editor** | Inline code editor with auto language detection, syntax preview, edit existing files or create new ones |
+| **🤖 Tron Agent** | AI repository assistant powered by OpenRouter — ask questions, search code, view history, and commit changes via natural language |
+| **GitHub Import** | Import public GitHub repositories directly into your hub |
 | **User Profiles** | Avatar upload & crop, bio, social links (LinkedIn, GitHub, website), phone & address |
 | **Location Picker** | Interactive Google Maps picker with **LocationIQ**-powered geocoding (forward & reverse) |
 | **Profile README** | Markdown-based profile page with GitHub-flavored rendering and asset support |
 | **Activity Feed** | Real-time activity logging for all repository and profile actions |
-| **Auth System** | Sign up, sign in, email verification, and session management via Supabase Auth |
-| **UI/UX** | Dark theme, glassmorphism, Matrix rain animation, neon accents, Framer Motion animations, typewriter hero text |
+| **Auth System** | Sign up, sign in, GitHub OAuth, email verification, and session management via Supabase Auth |
+| **UI/UX** | Dark theme, glassmorphism, Matrix rain animation, neon accents, Framer Motion animations, typewriter hero text, page progress bar |
 | **Responsive** | Fully responsive across desktop, tablet, and mobile devices |
+
+---
+
+## 🤖 Tron — AI Repository Agent
+
+**Tron** is a built-in AI assistant that lives at `/tron`. It connects to your repositories and lets you interact with them using plain English.
+
+### What Tron Can Do
+
+| Capability | Example prompt |
+|---|---|
+| **List files** | *"What files are in this repo?"* |
+| **Read file content** | *"Show me the contents of App.tsx"* |
+| **Search code** | *"Find all TODO comments"* |
+| **Commit history** | *"Show me the last 10 commits"* |
+| **Commit diffs** | *"What changed between the last two commits?"* |
+| **Create commits** | *"Rename the variable foo to bar in utils.ts"* |
+| **Create branches** | *"Create a new branch called feature/login"* |
+
+### How It Works
+
+Tron uses a multi-step **agentic loop** (up to 7 tool calls per query) powered by free models from **OpenRouter**. It selects the right repository tool, executes it, and reasons until a final answer is ready. Write operations (commits) require explicit confirmation before execution.
+
+### Setup
+
+Add your OpenRouter key to `.env`:
+
+```env
+VITE_OPENROUTER_API_KEY=your_openrouter_api_key_here
+```
+
+Get a free API key at [openrouter.ai](https://openrouter.ai/). The default model is `nvidia/nemotron-3-super-120b-a12b:free` — no paid plan required.
 
 ---
 
@@ -42,6 +77,7 @@ A full-featured cybersecurity platform built with **Vite + React + TypeScript**.
 | **UI Components** | [shadcn/ui](https://ui.shadcn.com/) + [Radix UI](https://www.radix-ui.com/) |
 | **Animations** | [Framer Motion](https://www.framer.com/motion/) |
 | **Backend** | [Supabase](https://supabase.com/) (Auth, PostgreSQL, Storage) |
+| **AI Agent** | [OpenRouter](https://openrouter.ai/) (free LLM routing — Nemotron, Gemma, etc.) |
 | **Routing** | [React Router v6](https://reactrouter.com/) |
 | **Charts** | [Recharts](https://recharts.org/) |
 | **Markdown** | [react-markdown](https://github.com/remarkjs/react-markdown) + remark-gfm + rehype-raw |
@@ -104,6 +140,11 @@ VITE_SUPABASE_PROJECT_ID=your_project_id
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
+# ── OpenRouter (Required for Tron AI Agent) ───────────────────────
+VITE_OPENROUTER_API_KEY=your_openrouter_api_key_here
+VITE_OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+VITE_OPENROUTER_FALLBACK_MODELS=nvidia/nemotron-3-nano-30b-a3b:free,google/gemma-4-26b-a4b-it:free
+
 # ── Google Maps (Optional – interactive map picker) ───────────────
 VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 
@@ -114,8 +155,9 @@ VITE_LOCATIONIQ_API_KEY=your_locationiq_api_key
 > **Notes:**
 > - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are **required** for auth and dashboard to work.
 > - If `VITE_SUPABASE_URL` is omitted, the app falls back to building the URL from `VITE_SUPABASE_PROJECT_ID`.
+> - `VITE_OPENROUTER_API_KEY` is **required** to use the Tron AI Agent. Get a free key at [openrouter.ai](https://openrouter.ai/).
 > - `VITE_GOOGLE_MAPS_API_KEY` enables the interactive map picker on the profile page. Without it, the visual map is disabled but geocoding still works.
-> - `VITE_LOCATIONIQ_API_KEY` is used for address search (forward geocoding) and coordinate-to-address resolution (reverse geocoding). Get a free key at [locationiq.com](https://locationiq.com/).
+> - `VITE_LOCATIONIQ_API_KEY` is used for address search and coordinate-to-address resolution. Get a free key at [locationiq.com](https://locationiq.com/).
 
 ### 5. Set Up the Database
 
@@ -172,7 +214,8 @@ http://localhost:8080
 1. Open the app in your browser.
 2. Navigate to `/signup` and create a test account.
 3. Confirm that **Sign In**, **Profile**, and **Dashboard** pages load without errors.
-4. *(Optional)* Go to `/profile`, add an address, and click **Locate Address** to verify LocationIQ geocoding.
+4. Navigate to `/tron`, select a repository, and ask Tron *"List all files"* to verify the AI agent.
+5. *(Optional)* Go to `/profile`, add an address, and click **Locate Address** to verify LocationIQ geocoding.
 
 ---
 
@@ -203,6 +246,8 @@ cyberx-project/
 │   │   ├── authApi.ts          # Authentication API helpers
 │   │   ├── hubApi.ts           # Hub / repository / profile API + Git VCS wrappers
 │   │   ├── gitVcs.ts           # Git VCS engine (SHA-1 hashing, commits, branches, merge, diff)
+│   │   ├── repoAgent.ts        # Tron AI agent — agentic loop, tool execution, OpenRouter integration
+│   │   ├── githubApi.ts        # GitHub repository import API
 │   │   ├── googleMaps.ts       # Google Maps API loader
 │   │   ├── locationIQ.ts       # LocationIQ geocoding API
 │   │   ├── emailValidation.ts  # Email validation utilities
@@ -217,7 +262,9 @@ cyberx-project/
 │   │   ├── Contact.tsx          # Contact form
 │   │   ├── SignIn.tsx           # Sign in page
 │   │   ├── SignUp.tsx           # Sign up page
-│   │   ├── Dashboard.tsx        # Hub dashboard (repos, files, commits, branches, CodeFile editor)
+│   │   ├── Dashboard.tsx        # Hub dashboard (profile, README, recent activity)
+│   │   ├── Repository.tsx       # Repository management (files, commits, branches, code editor)
+│   │   ├── TronAgent.tsx        # 🤖 Tron AI agent chat page
 │   │   ├── Profile.tsx          # Profile settings (avatar, bio, location, links)
 │   │   ├── Activity.tsx         # Activity feed
 │   │   └── NotFound.tsx         # 404 page
@@ -233,6 +280,28 @@ cyberx-project/
 ├── tsconfig.json               # TypeScript configuration
 └── vite.config.ts              # Vite build configuration
 ```
+
+---
+
+## 🗺️ Routes
+
+| Route | Page | Description |
+|---|---|---|
+| `/` | Index | Homepage with hero, features overview |
+| `/features` | Features | Detailed feature breakdown |
+| `/tools` | Tools | Security tools listing |
+| `/tools/:slug` | ToolDetail | Individual tool detail |
+| `/download` | Download | Download & installation page |
+| `/docs` | Docs | Documentation |
+| `/contact` | Contact | Contact form |
+| `/signin` | SignIn | Authentication — sign in |
+| `/signup` | SignUp | Authentication — sign up |
+| `/dashboard` | Dashboard | User hub (profile card, README, activity) |
+| `/repository` | Repository | Repository manager (files, commits, branches, editor) |
+| `/tron` | TronAgent | 🤖 Tron AI agent chat interface |
+| `/profile` | Profile | Profile settings |
+| `/activity` | Activity | Activity feed |
+| `/:username` | Dashboard | Public profile view |
 
 ---
 
@@ -257,6 +326,14 @@ cyberx-project/
 1. Go to [supabase.com](https://supabase.com/) and create a free project.
 2. Navigate to **Project Settings → API** to find your URL and anon key.
 3. Add them to `.env`.
+
+### OpenRouter (Required for Tron Agent)
+
+1. Sign up at [openrouter.ai](https://openrouter.ai/).
+2. Create an API key from the dashboard.
+3. Add it to `.env` as `VITE_OPENROUTER_API_KEY`.
+4. The default model (`nvidia/nemotron-3-super-120b-a12b:free`) is **free** — no credits needed.
+5. Optionally set `VITE_OPENROUTER_MODEL` to any other model ID on OpenRouter.
 
 ### LocationIQ (Free — Geocoding)
 
@@ -300,6 +377,13 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 - Confirm `VITE_SUPABASE_URL` or `VITE_SUPABASE_PROJECT_ID` is set.
 - **Restart the dev server** after editing `.env` (Vite requires a restart to load new env variables).
 
+### Tron Agent returns an error
+
+- Confirm `VITE_OPENROUTER_API_KEY` is set in `.env`.
+- Check your OpenRouter usage at [openrouter.ai/activity](https://openrouter.ai/activity).
+- The free model may be rate-limited — the agent will automatically retry with fallback models.
+- Restart the dev server after adding the key.
+
 ### Address search / geocoding not working
 
 - Verify `VITE_LOCATIONIQ_API_KEY` is set in `.env`.
@@ -329,7 +413,7 @@ Cyberspace-X 2.0 includes a **browser-native Git VCS** that produces **real Git-
 | **`gitVcs.ts`** | Core engine — computes Git blob, tree, and commit hashes using Web Crypto API (SHA-1) |
 | **`hubApi.ts`** | API wrappers for branches, merge, diff, and file-at-commit |
 | **Supabase tables** | `git_file_snapshots` (file tree per commit), `git_refs` (branch pointers), `repo_commits.git_hash` |
-| **Dashboard UI** | Branch selector, commit SHA badges, inline diff viewer, CodeFile editor |
+| **Repository UI** | Branch selector, commit SHA badges, inline diff viewer, CodeFile editor |
 
 ### Features
 
