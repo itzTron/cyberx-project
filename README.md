@@ -4,6 +4,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Supabase-Backend-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
+  <img src="https://img.shields.io/badge/Express-Backend-000000?logo=express&logoColor=white" alt="Express" />
   <img src="https://img.shields.io/badge/OpenRouter-AI-FF6B35?logo=openai&logoColor=white" alt="OpenRouter" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
 </p>
@@ -28,9 +29,51 @@ A full-featured cybersecurity platform built with **Vite + React + TypeScript**.
 | **Location Picker** | Interactive Google Maps picker with **LocationIQ**-powered geocoding (forward & reverse) |
 | **Profile README** | Markdown-based profile page with GitHub-flavored rendering and asset support |
 | **Activity Feed** | Real-time activity logging for all repository and profile actions |
-| **Auth System** | Sign up, sign in, GitHub OAuth, email verification, and session management via Supabase Auth |
+| **Auth System** | Password sign-in, GitHub OAuth, **OTP email auth** (passwordless), JWT, email verification, and session management |
 | **UI/UX** | Dark theme, glassmorphism, Matrix rain animation, neon accents, Framer Motion animations, typewriter hero text, page progress bar |
 | **Responsive** | Fully responsive across desktop, tablet, and mobile devices |
+
+---
+
+## 🔐 Authentication System
+
+Cyberspace-X 2.0 supports **three sign-in methods**, all available from `/signin` and `/signup`:
+
+| Method | How it works |
+|---|---|
+| **Email + Password** | Standard Supabase Auth (bcrypt, email verification) |
+| **GitHub OAuth** | One-click OAuth via Supabase — grants repository access scopes |
+| **Email OTP** *(new)* | Passwordless — a 6-digit code is emailed via SMTP; verifies through a custom Express backend, then creates a real Supabase session |
+
+### OTP Auth Flow
+
+```
+User enters email
+      ↓
+POST /auth/send-otp  (Express backend)
+      ↓ generates crypto-random 6-digit OTP
+      ↓ stores in otp_tokens table (5-min expiry, 3 attempts max)
+      ↓ sends branded HTML email via Nodemailer SMTP
+User receives email & enters code
+      ↓
+POST /auth/verify-otp  (Express backend)
+      ↓ validates OTP (constant-time compare), expiry, attempt limit
+      ↓ fetches or auto-creates Supabase user via Admin API
+      ↓ generates custom JWT (7-day) + Supabase magic-link token_hash
+      ↓
+Frontend receives token_hash
+      ↓ calls supabase.auth.verifyOtp({ token_hash, type: 'magiclink' })
+      ↓ real Supabase session established → navigate to dashboard
+```
+
+### Security Highlights
+
+- 🔒 OTP stored server-side only — never exposed to the browser
+- ⏱️ 5-minute expiry with one-time deletion on use
+- 🛑 3-attempt limit per OTP; IP-based rate limiting via `express-rate-limit`
+- 🔑 `SUPABASE_SERVICE_ROLE_KEY` lives **only** in `server/.env` — never in frontend env vars
+- ⚡ Constant-time OTP comparison (`crypto.timingSafeEqual`) prevents timing attacks
+- 🛡️ JWT signed with a 96-char random secret (`jsonwebtoken`, 7-day expiry)
 
 ---
 
@@ -76,7 +119,11 @@ Get a free API key at [openrouter.ai](https://openrouter.ai/). The default model
 | **Styling** | [Tailwind CSS 3](https://tailwindcss.com/) + [tailwindcss-animate](https://github.com/jamiebuilds/tailwindcss-animate) |
 | **UI Components** | [shadcn/ui](https://ui.shadcn.com/) + [Radix UI](https://www.radix-ui.com/) |
 | **Animations** | [Framer Motion](https://www.framer.com/motion/) |
-| **Backend** | [Supabase](https://supabase.com/) (Auth, PostgreSQL, Storage) |
+| **Backend (Auth)** | [Express 4](https://expressjs.com/) — OTP generation, SMTP, JWT issuance |
+| **Database / Auth** | [Supabase](https://supabase.com/) (Auth, PostgreSQL, Storage) |
+| **Email** | [Nodemailer 8](https://nodemailer.com/) — SMTP email delivery |
+| **JWT** | [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) |
+| **Rate Limiting** | [express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) |
 | **AI Agent** | [OpenRouter](https://openrouter.ai/) (free LLM routing — Nemotron, Gemma, etc.) |
 | **Routing** | [React Router v6](https://reactrouter.com/) |
 | **Charts** | [Recharts](https://recharts.org/) |
@@ -110,13 +157,13 @@ git clone https://github.com/itzTron/cyberx-project.git
 cd cyberx-project
 ```
 
-### 2. Install Dependencies
+### 2. Install Frontend Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Create the Environment File
+### 3. Create the Frontend Environment File
 
 Copy the example `.env` and fill in your keys:
 
@@ -130,11 +177,14 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
-### 4. Configure Environment Variables
+### 4. Configure Frontend Environment Variables
 
 Open `.env` in your editor and set the required values:
 
 ```env
+# ── OTP Auth Backend ──────────────────────────────────────────────
+VITE_API_BASE_URL=http://localhost:3001
+
 # ── Supabase (Required) ──────────────────────────────────────────
 VITE_SUPABASE_PROJECT_ID=your_project_id
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
@@ -152,14 +202,54 @@ VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 VITE_LOCATIONIQ_API_KEY=your_locationiq_api_key
 ```
 
-> **Notes:**
-> - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are **required** for auth and dashboard to work.
-> - If `VITE_SUPABASE_URL` is omitted, the app falls back to building the URL from `VITE_SUPABASE_PROJECT_ID`.
-> - `VITE_OPENROUTER_API_KEY` is **required** to use the Tron AI Agent. Get a free key at [openrouter.ai](https://openrouter.ai/).
-> - `VITE_GOOGLE_MAPS_API_KEY` enables the interactive map picker on the profile page. Without it, the visual map is disabled but geocoding still works.
-> - `VITE_LOCATIONIQ_API_KEY` is used for address search and coordinate-to-address resolution. Get a free key at [locationiq.com](https://locationiq.com/).
+### 5. Set Up the OTP Auth Backend
 
-### 5. Set Up the Database
+The OTP email authentication system runs as a separate **Express** server.
+
+```bash
+cd server
+npm install
+```
+
+Copy the example env and fill in your values:
+
+**Linux / macOS:**
+```bash
+cp .env.example .env
+```
+
+**Windows PowerShell:**
+```powershell
+Copy-Item .env.example .env
+```
+
+Open `server/.env` and configure:
+
+```env
+# Supabase — service role key (NEVER expose to the browser)
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key   # Project Settings → API
+
+# JWT secret — generate with:
+# node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+JWT_SECRET=your_long_random_secret
+
+# SMTP — Gmail App Password recommended
+# Enable 2FA → https://myaccount.google.com/apppasswords → create app password
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your@gmail.com
+SMTP_PASS=your_16_char_app_password
+SMTP_FROM="Cyberspace-X <your@gmail.com>"
+
+PORT=3001
+FRONTEND_ORIGIN=http://localhost:8080
+```
+
+> **Where to find `SUPABASE_SERVICE_ROLE_KEY`:** Supabase dashboard → **Project Settings → API → service_role** (secret key).
+
+### 6. Set Up the Database
 
 This project depends on SQL migrations in [`supabase/migrations/`](./supabase/migrations). Choose one of the options below.
 
@@ -174,6 +264,8 @@ supabase login
 supabase link --project-ref your_project_id
 supabase db push
 ```
+
+Or paste each migration file manually into **Supabase → SQL Editor → New query → Run**.
 
 #### Option B — Local Supabase (Docker)
 
@@ -197,23 +289,29 @@ supabase status
 supabase db reset
 ```
 
-### 6. Start the Development Server
+### 7. Start Both Servers
 
+Open **two terminals**:
+
+**Terminal 1 — Frontend (Vite):**
 ```bash
 npm run dev
 ```
 
-The app will be available at:
-
+**Terminal 2 — Auth Backend (Express):**
+```bash
+cd server
+npm run dev
 ```
-http://localhost:8080
-```
 
-### 7. Verify Your Setup
+The app is available at `http://localhost:8080`.  
+The auth backend runs at `http://localhost:3001`.
+
+### 8. Verify Your Setup
 
 1. Open the app in your browser.
-2. Navigate to `/signup` and create a test account.
-3. Confirm that **Sign In**, **Profile**, and **Dashboard** pages load without errors.
+2. Go to `/signup` → click **Email OTP** tab → enter your email → check inbox → enter the 6-digit code.
+3. Confirm you are redirected to your dashboard and remain signed in.
 4. Navigate to `/tron`, select a repository, and ask Tron *"List all files"* to verify the AI agent.
 5. *(Optional)* Go to `/profile`, add an address, and click **Locate Address** to verify LocationIQ geocoding.
 
@@ -225,6 +323,14 @@ http://localhost:8080
 cyberx-project/
 ├── public/                     # Static assets
 ├── scripts/                    # Build & CI scripts (SonarQube)
+├── server/                     # ── OTP Auth Backend (Express) ──
+│   ├── index.js                # Server entry point (CORS, rate limiting, routes)
+│   ├── package.json            # Backend dependencies
+│   ├── .env.example            # Backend env template
+│   ├── middleware/
+│   │   └── auth.js             # JWT verification middleware (verifyJwt)
+│   └── routes/
+│       └── auth.js             # POST /auth/send-otp + POST /auth/verify-otp
 ├── src/
 │   ├── components/             # Reusable UI components
 │   │   ├── ui/                 # shadcn/ui primitives
@@ -243,7 +349,8 @@ cyberx-project/
 │   ├── hooks/                  # Custom React hooks
 │   ├── lib/                    # Utility libraries
 │   │   ├── supabase.ts         # Supabase client initialisation
-│   │   ├── authApi.ts          # Authentication API helpers
+│   │   ├── authApi.ts          # Authentication API helpers (password, OAuth)
+│   │   ├── otpApi.ts           # OTP API client (sendOtp, verifyOtp, JWT helpers)
 │   │   ├── hubApi.ts           # Hub / repository / profile API + Git VCS wrappers
 │   │   ├── gitVcs.ts           # Git VCS engine (SHA-1 hashing, commits, branches, merge, diff)
 │   │   ├── repoAgent.ts        # Tron AI agent — agentic loop, tool execution, OpenRouter integration
@@ -260,10 +367,10 @@ cyberx-project/
 │   │   ├── Download.tsx         # Download page
 │   │   ├── Docs.tsx             # Documentation page
 │   │   ├── Contact.tsx          # Contact form
-│   │   ├── SignIn.tsx           # Sign in page
-│   │   ├── SignUp.tsx           # Sign up page
-│   │   ├── Dashboard.tsx        # Hub dashboard (profile, README, recent activity)
-│   │   ├── Repository.tsx       # Repository management (files, commits, branches, code editor)
+│   │   ├── SignIn.tsx           # Sign in (password / GitHub OAuth / OTP tabs)
+│   │   ├── SignUp.tsx           # Sign up (password / GitHub OAuth / OTP tabs)
+│   │   ├── Dashboard.tsx        # User hub (profile card, README, recent activity)
+│   │   ├── Repository.tsx       # Repository management (files, commits, branches, editor)
 │   │   ├── TronAgent.tsx        # 🤖 Tron AI agent chat page
 │   │   ├── Profile.tsx          # Profile settings (avatar, bio, location, links)
 │   │   ├── Activity.tsx         # Activity feed
@@ -273,9 +380,11 @@ cyberx-project/
 │   └── index.css               # Global styles & Tailwind directives
 ├── supabase/
 │   ├── config.toml             # Supabase project configuration
-│   └── migrations/             # SQL migration files (includes Git VCS tables)
-├── .env.example                # Environment variable template
-├── package.json                # Dependencies & scripts
+│   └── migrations/             # SQL migration files
+│       ├── ...                 # Git VCS tables
+│       └── 20260422000000_otp_tokens.sql  # OTP tokens table
+├── .env.example                # Frontend environment variable template
+├── package.json                # Frontend dependencies & scripts
 ├── tailwind.config.ts          # Tailwind CSS configuration
 ├── tsconfig.json               # TypeScript configuration
 └── vite.config.ts              # Vite build configuration
@@ -294,8 +403,8 @@ cyberx-project/
 | `/download` | Download | Download & installation page |
 | `/docs` | Docs | Documentation |
 | `/contact` | Contact | Contact form |
-| `/signin` | SignIn | Authentication — sign in |
-| `/signup` | SignUp | Authentication — sign up |
+| `/signin` | SignIn | Sign in — password, GitHub OAuth, or Email OTP |
+| `/signup` | SignUp | Sign up — password, GitHub OAuth, or Email OTP |
 | `/dashboard` | Dashboard | User hub (profile card, README, activity) |
 | `/repository` | Repository | Repository manager (files, commits, branches, editor) |
 | `/tron` | TronAgent | 🤖 Tron AI agent chat interface |
@@ -307,15 +416,24 @@ cyberx-project/
 
 ## 📜 Available Scripts
 
+### Frontend
+
 | Command | Description |
 |---|---|
-| `npm run dev` | Start the development server on `http://localhost:8080` |
+| `npm run dev` | Start the Vite dev server on `http://localhost:8080` |
 | `npm run build` | Build the production bundle to `dist/` |
 | `npm run build:dev` | Build in development mode (with source maps) |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run ESLint across the project |
 | `npm run sonar:check` | Verify SonarQube token is configured |
 | `npm run sonar:scan` | Run SonarQube scanner for code analysis |
+
+### Backend (`/server`)
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the auth server with `node --watch` (auto-reload) |
+| `npm start` | Start the auth server (production) |
 
 ---
 
@@ -324,8 +442,17 @@ cyberx-project/
 ### Supabase (Required)
 
 1. Go to [supabase.com](https://supabase.com/) and create a free project.
-2. Navigate to **Project Settings → API** to find your URL and anon key.
-3. Add them to `.env`.
+2. Navigate to **Project Settings → API** to find your **URL**, **anon key**, and **service_role key**.
+3. Add the URL and anon key to frontend `.env`.
+4. Add the **service_role key** to `server/.env` **only** — never expose it to the browser.
+
+### OTP Backend SMTP — Gmail (Required for OTP Auth)
+
+1. Enable **2-Step Verification** on your Google account.
+2. Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+3. Create a new app password (name it anything, e.g. *CyberspaceX*).
+4. Copy the 16-character password into `server/.env` as `SMTP_PASS` (remove spaces).
+5. Set `SMTP_USER` to your Gmail address.
 
 ### OpenRouter (Required for Tron Agent)
 
@@ -333,7 +460,6 @@ cyberx-project/
 2. Create an API key from the dashboard.
 3. Add it to `.env` as `VITE_OPENROUTER_API_KEY`.
 4. The default model (`nvidia/nemotron-3-super-120b-a12b:free`) is **free** — no credits needed.
-5. Optionally set `VITE_OPENROUTER_MODEL` to any other model ID on OpenRouter.
 
 ### LocationIQ (Free — Geocoding)
 
@@ -366,6 +492,8 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 - [Cloudflare Pages](https://pages.cloudflare.com/)
 - [GitHub Pages](https://pages.github.com/)
 
+> **Production note:** The Express auth backend (`/server`) must be deployed as a separate Node.js service (e.g. [Railway](https://railway.app/), [Render](https://render.com/), [Fly.io](https://fly.io/)). Update `VITE_API_BASE_URL` to point to your production backend URL.
+
 ---
 
 ## 🔧 Troubleshooting
@@ -376,6 +504,36 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 - Confirm `VITE_SUPABASE_ANON_KEY` is set.
 - Confirm `VITE_SUPABASE_URL` or `VITE_SUPABASE_PROJECT_ID` is set.
 - **Restart the dev server** after editing `.env` (Vite requires a restart to load new env variables).
+
+### OTP email not received
+
+- Confirm `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are set in `server/.env`.
+- Make sure you are using a **Gmail App Password** (16 characters, no spaces), not your regular account password.
+- Check `server/` terminal for error logs — Nodemailer logs SMTP errors verbosely.
+- Check your spam folder.
+
+### OTP "No OTP found for this email" after entering code
+
+- The OTP expires after **5 minutes**. Request a new one.
+- The backend may have restarted and cleared in-flight state — request a new OTP.
+
+### OTP verified but still not signed in (redirects back to login)
+
+- Ensure the `server/` backend is running (`npm run dev` inside `/server`).
+- Confirm `VITE_API_BASE_URL=http://localhost:3001` is set in `.env`.
+- Check browser DevTools → Network for the `/auth/verify-otp` response.
+
+### EADDRINUSE: port 3001 already in use
+
+```powershell
+# Windows — free the port
+Get-Process -Id (Get-NetTCPConnection -LocalPort 3001).OwningProcess | Stop-Process -Force
+```
+
+```bash
+# macOS / Linux
+lsof -ti:3001 | xargs kill -9
+```
 
 ### Tron Agent returns an error
 
@@ -388,11 +546,6 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 
 - Verify `VITE_LOCATIONIQ_API_KEY` is set in `.env`.
 - Check your LocationIQ usage quota at [locationiq.com/dashboard](https://locationiq.com/dashboard).
-- Restart the dev server after adding the key.
-
-### Map picker shows black screen on re-open
-
-- This was a known issue that has been fixed. If you still encounter it, pull the latest code.
 
 ### Database migrations fail
 
