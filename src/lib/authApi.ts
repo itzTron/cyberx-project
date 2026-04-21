@@ -1,6 +1,9 @@
 import { normalizeEmail, validateSignUpEmail } from '@/lib/emailValidation';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
+// ── JWT token helpers (for OTP-issued tokens) ─────────────────────────────────
+export { getOtpJwt as getStoredJwt, storeOtpJwt as storeJwt, clearOtpJwt as clearJwt, getOtpAuthHeaders as getAuthHeaders } from '@/lib/otpApi';
+
 export type SignUpPayload = {
   name: string;
   email: string;
