@@ -23,6 +23,7 @@ export type SendOtpResponse = {
 
 export type VerifyOtpResponse = {
   token: string;
+  supabase_token_hash: string | null;
   user: OtpUser;
 };
 

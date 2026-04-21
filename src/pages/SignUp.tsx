@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { getSupportedEmailDomains, validateSignUpEmail } from '@/lib/emailValidation';
 import { AuthApiError, signInWithGitHub, signUpUser } from '@/lib/authApi';
 import { OtpApiError, sendOtp, verifyOtp } from '@/lib/otpApi';
+import { getSupabaseClient } from '@/lib/supabase';
 
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
@@ -88,6 +89,19 @@ const SignUp = () => {
     setOtpError(''); setIsVerifyingOtp(true);
     try {
       const res = await verifyOtp(otpEmail.trim().toLowerCase(), otp);
+
+      // Establish a real Supabase session so the rest of the app works
+      if (res.supabase_token_hash) {
+        const supabase = getSupabaseClient();
+        const { error: sessionError } = await supabase.auth.verifyOtp({
+          token_hash: res.supabase_token_hash,
+          type: 'magiclink',
+        });
+        if (sessionError) {
+          console.warn('[OTP signup] Supabase session error:', sessionError.message);
+        }
+      }
+
       navigate(`/${res.user.username}`);
     } catch (error) {
       if (error instanceof OtpApiError) {

@@ -346,17 +346,38 @@ router.post('/verify-otp', verifyOtpLimiter, async (req, res) => {
       profileData?.username ||
       deriveUsername({ userId, fullName, email: userEmail });
 
-    // ── Issue JWT ─────────────────────────────────────────────────────────────
+    // ── Issue custom JWT (kept for API calls that need it) ────────────────────
     const token = jwt.sign(
       { user_id: userId, email: userEmail },
       JWT_SECRET,
       { expiresIn: '7d', issuer: 'cyberspace-x', audience: 'cyberspace-x-client' },
     );
 
+    // ── Generate a Supabase magic-link token so the frontend can create a real
+    //    Supabase session via supabase.auth.verifyOtp({ token_hash, type })
+    //    This is what allows supabase.auth.getUser() / getSession() to work. ──
+    let supabaseTokenHash = null;
+    try {
+      const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: userEmail,
+        options: { shouldCreateUser: false },
+      });
+      if (linkError) {
+        console.warn('[verify-otp] generateLink warning:', linkError.message);
+      } else {
+        supabaseTokenHash = linkData?.properties?.hashed_token ?? null;
+      }
+    } catch (linkErr) {
+      // Non-fatal: the custom JWT is still returned; session just won't be Supabase-native
+      console.warn('[verify-otp] generateLink threw:', linkErr.message);
+    }
+
     console.log(`[verify-otp] Authenticated user ${userEmail} (${userId})`);
 
     return res.status(200).json({
       token,
+      supabase_token_hash: supabaseTokenHash,
       user: {
         id: userId,
         email: userEmail,

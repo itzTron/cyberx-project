@@ -179,6 +179,19 @@ const SignIn = () => {
     setIsVerifyingOtp(true);
     try {
       const res = await verifyOtp(otpEmail.trim().toLowerCase(), otp);
+
+      // Establish a real Supabase session so the rest of the app works
+      if (res.supabase_token_hash) {
+        const supabase = getSupabaseClient();
+        const { error: sessionError } = await supabase.auth.verifyOtp({
+          token_hash: res.supabase_token_hash,
+          type: 'magiclink',
+        });
+        if (sessionError) {
+          console.warn('[OTP signin] Supabase session error:', sessionError.message);
+        }
+      }
+
       navigate(`/${res.user.username}`);
     } catch (error) {
       if (error instanceof OtpApiError) {
