@@ -99,6 +99,7 @@ const TronAgent = () => {
   /* Refs */
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const agentAbortControllerRef = useRef<AbortController | null>(null);
 
   /* ---- Bootstrap ---- */
   useEffect(() => {
@@ -143,6 +144,10 @@ const TronAgent = () => {
     return () => document.removeEventListener('click', handler);
   }, []);
 
+  useEffect(() => () => {
+    agentAbortControllerRef.current?.abort(new Error('AI request was cancelled.'));
+  }, []);
+
   /* ---- Helpers ---- */
   const selectedRepo = repositories.find((r) => r.id === selectedRepoId) ?? null;
 
@@ -165,6 +170,10 @@ const TronAgent = () => {
       setInputValue('');
     }
 
+    agentAbortControllerRef.current?.abort(new Error('Previous AI request was cancelled.'));
+    const requestController = new AbortController();
+    agentAbortControllerRef.current = requestController;
+
     const loadingId = generateId();
     appendMessage(makeMessage('tron', '', { id: loadingId, isLoading: true }));
     setIsThinking(true);
@@ -177,6 +186,7 @@ const TronAgent = () => {
         pushableRepoIds,
         memory: agentMemory,
         forcedAction,
+        signal: requestController.signal,
       });
 
       setAgentMemory(result.memory);
@@ -196,9 +206,17 @@ const TronAgent = () => {
         });
       }
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Unknown error from Tron.';
-      updateMessage(loadingId, { isLoading: false, content: `❌ ${reason}` });
+      if (error instanceof Error && error.name === 'AbortError') {
+        const reason = error.message || 'AI request was cancelled.';
+        updateMessage(loadingId, { isLoading: false, content: `⚠️ ${reason}` });
+      } else {
+        const reason = error instanceof Error ? error.message : 'Unknown error from Tron.';
+        updateMessage(loadingId, { isLoading: false, content: `❌ ${reason}` });
+      }
     } finally {
+      if (agentAbortControllerRef.current === requestController) {
+        agentAbortControllerRef.current = null;
+      }
       setIsThinking(false);
       inputRef.current?.focus();
     }

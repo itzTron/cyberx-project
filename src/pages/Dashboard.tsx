@@ -20,6 +20,7 @@ import Footer from '@/components/Footer';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -332,9 +333,43 @@ const Dashboard = () => {
             </div>
 
             {isBootstrapping && (
-              <Card>
-                <CardContent className="pt-6 text-sm text-muted-foreground">Loading dashboard...</CardContent>
-              </Card>
+              <div className="space-y-6">
+                <Card className="border-accent/30 bg-accent/5">
+                  <CardContent className="pt-6 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+                      <Skeleton className="h-28 w-28 rounded-full bg-accent/25 self-center lg:self-start" />
+                      <div className="space-y-3 text-center lg:text-left">
+                        <Skeleton className="h-7 w-48 bg-accent/25 mx-auto lg:mx-0" />
+                        <Skeleton className="h-4 w-32 bg-accent/20 mx-auto lg:mx-0" />
+                        <Skeleton className="h-4 w-72 max-w-full bg-accent/20 mx-auto lg:mx-0" />
+                        <div className="flex gap-2 justify-center lg:justify-start">
+                          <Skeleton className="h-8 w-28 bg-accent/20" />
+                          <Skeleton className="h-8 w-24 bg-accent/20" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 w-full lg:w-auto">
+                      <Skeleton className="h-16 w-full lg:w-28 bg-accent/20" />
+                      <Skeleton className="h-16 w-full lg:w-28 bg-accent/20" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-accent/20 bg-accent/5">
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="flex gap-2">
+                      <Skeleton className="h-9 w-24 bg-accent/25" />
+                      <Skeleton className="h-9 w-24 bg-accent/20" />
+                    </div>
+                    <div className="rounded-md border border-accent/20 bg-card/60 p-4 space-y-3">
+                      <Skeleton className="h-6 w-40 bg-accent/25" />
+                      <Skeleton className="h-4 w-full bg-accent/20" />
+                      <Skeleton className="h-4 w-11/12 bg-accent/20" />
+                      <Skeleton className="h-4 w-4/5 bg-accent/20" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
             {!isBootstrapping && bootstrapError && (

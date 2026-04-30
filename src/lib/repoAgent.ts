@@ -76,21 +76,25 @@ type RunAgentInput = {
   pushableRepoIds: Set<string>;
   memory: RepoAgentMemory;
   forcedAction?: RepoAgentAction;
+  signal?: AbortSignal;
 };
 
 const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const DEFAULT_FREE_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
+const DEFAULT_FREE_MODEL = 'nvidia/nemotron-nano-9b-v2:free';
 const DEFAULT_FALLBACK_MODELS = [
   'nvidia/nemotron-3-nano-30b-a3b:free',
-  'nvidia/nemotron-nano-9b-v2:free',
   'google/gemma-4-26b-a4b-it:free',
 ];
-const MAX_RATE_LIMIT_RETRIES_PER_MODEL = 2;
-const MAX_TOOL_LOOPS = 7;
+const MAX_RATE_LIMIT_RETRIES_PER_MODEL = 1;
+const MAX_TOOL_LOOPS = 4;
 const MAX_RECENT_FILES = 12;
-const MAX_TEXT_CHARS = 7000;
-const MAX_FILE_FETCH_BYTES = 220000;
-const MAX_SEARCH_FILES = 18;
+const MAX_TEXT_CHARS = 3500;
+const MAX_FILE_FETCH_BYTES = 140000;
+const MAX_SEARCH_FILES = 12;
+const MAX_SEARCH_MATCHES = 18;
+const SEARCH_FETCH_CONCURRENCY = 4;
+const MAX_LIST_REPO_FILES = 220;
+const MAX_COMMIT_HISTORY_ITEMS = 24;
 
 const SYSTEM_PROMPT = [
   'You are an AI repository management agent.',
@@ -125,6 +129,24 @@ const cloneMemory = (memory: RepoAgentMemory, fallbackRepoId: string): RepoAgent
 const clampText = (value: string, max = MAX_TEXT_CHARS) => {
   if (value.length <= max) return value;
   return `${value.slice(0, max)}\n...[truncated]`;
+};
+
+const isAbortError = (error: unknown) =>
+  (error instanceof DOMException && error.name === 'AbortError') ||
+  (error instanceof Error && error.name === 'AbortError');
+
+const getAbortMessage = (signal?: AbortSignal) => {
+  const reason = signal?.reason;
+  if (reason instanceof Error && reason.message.trim()) return reason.message;
+  if (typeof reason === 'string' && reason.trim()) return reason.trim();
+  return 'AI request was cancelled.';
+};
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (!signal?.aborted) return;
+  const abortError = new Error(getAbortMessage(signal));
+  abortError.name = 'AbortError';
+  throw abortError;
 };
 
 const pushRecentFiles = (memory: RepoAgentMemory, paths: string[]) => {
@@ -246,7 +268,8 @@ const extractAssistantContent = (
   return '';
 };
 
-const callOpenRouter = async (messages: AgentMessage[]) => {
+const callOpenRouter = async (messages: AgentMessage[], signal?: AbortSignal) => {
+  throwIfAborted(signal);
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY?.trim();
   const configuredModel = (import.meta.env.VITE_OPENROUTER_MODEL?.trim() || DEFAULT_FREE_MODEL) as string;
   const fallbackModelsFromEnv = (import.meta.env.VITE_OPENROUTER_FALLBACK_MODELS || '')
@@ -260,6 +283,8 @@ const callOpenRouter = async (messages: AgentMessage[]) => {
     import.meta.env.VITE_OPENROUTER_SITE_URL?.trim() ||
     (typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
   const siteTitle = import.meta.env.VITE_OPENROUTER_SITE_TITLE?.trim() || 'Cyberspace-X Repository Agent';
+  const timeoutFromEnv = Number(import.meta.env.VITE_OPENROUTER_REQUEST_TIMEOUT_MS || '25000');
+  const requestTimeoutMs = Number.isFinite(timeoutFromEnv) ? Math.max(5000, timeoutFromEnv) : 25000;
 
   if (!apiKey) {
     throw new Error('Missing VITE_OPENROUTER_API_KEY. Add it to your .env to use the repository agent.');
@@ -269,23 +294,50 @@ const callOpenRouter = async (messages: AgentMessage[]) => {
   const attemptedModels: string[] = [];
 
   for (const model of modelCandidates) {
+    throwIfAborted(signal);
     attemptedModels.push(model);
 
     for (let retry = 0; retry <= MAX_RATE_LIMIT_RETRIES_PER_MODEL; retry += 1) {
-      const response = await fetch(OPENROUTER_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'HTTP-Referer': siteUrl,
-          'X-OpenRouter-Title': siteTitle,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.1,
-          messages,
-        }),
-      });
+      throwIfAborted(signal);
+      const requestController = new AbortController();
+      let timedOut = false;
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        requestController.abort();
+      }, requestTimeoutMs);
+      const abortListener = () => requestController.abort();
+      signal?.addEventListener('abort', abortListener, { once: true });
+
+      let response: Response;
+      try {
+        response = await fetch(OPENROUTER_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'HTTP-Referer': siteUrl,
+            'X-OpenRouter-Title': siteTitle,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.1,
+            messages,
+          }),
+          signal: requestController.signal,
+        });
+      } catch (error) {
+        if (isAbortError(error)) {
+          if (signal?.aborted) throwIfAborted(signal);
+          if (timedOut) {
+            lastErrorDetail = `Model "${model}" timed out after ${requestTimeoutMs}ms.`;
+            break;
+          }
+        }
+        throw error instanceof Error ? error : new Error('OpenRouter request failed.');
+      } finally {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', abortListener);
+      }
 
       if (response.ok) {
         const payload = (await response.json()) as {
@@ -415,13 +467,16 @@ const executeTool = async ({
   repoId,
   memory,
   pushableRepoIds,
+  signal,
 }: {
   tool: AgentToolName;
   args: Record<string, unknown>;
   repoId: string;
   memory: RepoAgentMemory;
   pushableRepoIds: Set<string>;
+  signal?: AbortSignal;
 }) => {
+  throwIfAborted(signal);
   memory.currentRepoId = repoId;
   const ensureWriteAccess = () => {
     if (!pushableRepoIds.has(repoId)) {
@@ -430,20 +485,22 @@ const executeTool = async ({
   };
 
   if (tool === 'list_repo_files') {
+    throwIfAborted(signal);
     const files = await listRepositoryFiles(repoId);
     return {
       repoId,
       totalFiles: files.length,
-      files: files.slice(0, 400).map((file) => ({
+      files: files.slice(0, MAX_LIST_REPO_FILES).map((file) => ({
         path: file.path,
         language: file.language,
         sizeBytes: file.size_bytes,
       })),
-      truncated: files.length > 400,
+      truncated: files.length > MAX_LIST_REPO_FILES,
     };
   }
 
   if (tool === 'get_file_content') {
+    throwIfAborted(signal);
     const path = String(args.path || '').trim();
     if (!isValidRelativePath(path)) {
       throw new Error('Invalid file path.');
@@ -460,6 +517,7 @@ const executeTool = async ({
   }
 
   if (tool === 'search_code') {
+    throwIfAborted(signal);
     const query = String(args.query || '').trim();
     if (!query) {
       throw new Error('query is required.');
@@ -476,24 +534,36 @@ const executeTool = async ({
     let bytesRead = 0;
     let scannedFiles = 0;
 
-    for (const candidate of candidateFiles) {
-      if (bytesRead > MAX_FILE_FETCH_BYTES) break;
-      const file = await getRepositoryFileContent(repoId, candidate.path);
-      const content = file.content || '';
-      bytesRead += content.length;
-      scannedFiles += 1;
-      const index = content.toLowerCase().indexOf(lowered);
-      if (index === -1) continue;
+    for (let index = 0; index < candidateFiles.length; index += SEARCH_FETCH_CONCURRENCY) {
+      throwIfAborted(signal);
+      if (bytesRead > MAX_FILE_FETCH_BYTES || matches.length >= MAX_SEARCH_MATCHES) break;
 
-      const start = Math.max(0, index - 120);
-      const end = Math.min(content.length, index + lowered.length + 180);
-      const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
-      matches.push({
-        path: file.path,
-        snippet: clampText(snippet, 260),
-      });
-      pushRecentFiles(memory, [file.path]);
-      if (matches.length >= 30) break;
+      const batch = candidateFiles.slice(index, index + SEARCH_FETCH_CONCURRENCY);
+      const batchResults = await Promise.allSettled(
+        batch.map((candidate) => getRepositoryFileContent(repoId, candidate.path)),
+      );
+
+      for (const result of batchResults) {
+        throwIfAborted(signal);
+        if (bytesRead > MAX_FILE_FETCH_BYTES || matches.length >= MAX_SEARCH_MATCHES) break;
+        if (result.status !== 'fulfilled') continue;
+
+        const file = result.value;
+        const content = file.content || '';
+        bytesRead += content.length;
+        scannedFiles += 1;
+        const matchIndex = content.toLowerCase().indexOf(lowered);
+        if (matchIndex === -1) continue;
+
+        const start = Math.max(0, matchIndex - 120);
+        const end = Math.min(content.length, matchIndex + lowered.length + 180);
+        const snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
+        matches.push({
+          path: file.path,
+          snippet: clampText(snippet, 260),
+        });
+        pushRecentFiles(memory, [file.path]);
+      }
     }
 
     return {
@@ -506,21 +576,23 @@ const executeTool = async ({
   }
 
   if (tool === 'get_commit_history') {
+    throwIfAborted(signal);
     const commits = await listRepositoryCommits(repoId);
     return {
       total: commits.length,
-      commits: commits.slice(0, 40).map((commit) => ({
+      commits: commits.slice(0, MAX_COMMIT_HISTORY_ITEMS).map((commit) => ({
         hash: commit.git_hash || '',
         parentHash: commit.parent_hash || '',
         message: commit.message,
         filesChanged: commit.files_changed,
         createdAt: commit.created_at,
       })),
-      truncated: commits.length > 40,
+      truncated: commits.length > MAX_COMMIT_HISTORY_ITEMS,
     };
   }
 
   if (tool === 'create_branch') {
+    throwIfAborted(signal);
     ensureWriteAccess();
     const name = String(args.name || '').trim();
     if (!name) throw new Error('Branch name is required.');
@@ -532,6 +604,7 @@ const executeTool = async ({
   }
 
   if (tool === 'create_commit') {
+    throwIfAborted(signal);
     ensureWriteAccess();
     const message = String(args.message || '').trim();
     const changes = Array.isArray(args.changes)
@@ -564,6 +637,7 @@ const executeTool = async ({
   }
 
   if (tool === 'get_diff') {
+    throwIfAborted(signal);
     const commit1 = String(args.commit1 || '').trim();
     const commit2 = String(args.commit2 || '').trim();
     if (!commit1 || !commit2) {
@@ -588,7 +662,8 @@ const finalFromToolError = (message: string, memory: RepoAgentMemory): RepoAgent
 });
 
 export const runRepositoryAgent = async (input: RunAgentInput): Promise<RepoAgentResult> => {
-  const { userInput, repoId, repositories, pushableRepoIds, forcedAction } = input;
+  const { userInput, repoId, repositories, pushableRepoIds, forcedAction, signal } = input;
+  throwIfAborted(signal);
   const memory = cloneMemory(input.memory, repoId);
   const activeRepo = repositories.find((repo) => repo.id === repoId);
   if (!activeRepo) {
@@ -613,12 +688,14 @@ export const runRepositoryAgent = async (input: RunAgentInput): Promise<RepoAgen
 
   if (forcedAction) {
     try {
+      throwIfAborted(signal);
       const forcedResult = await executeTool({
         tool: forcedAction.tool,
         args: forcedAction.args as unknown as Record<string, unknown>,
         repoId,
         memory,
         pushableRepoIds,
+        signal,
       });
       messages.push({
         role: 'user',
@@ -631,7 +708,8 @@ export const runRepositoryAgent = async (input: RunAgentInput): Promise<RepoAgen
   }
 
   for (let loopIndex = 0; loopIndex < MAX_TOOL_LOOPS; loopIndex += 1) {
-    const raw = await callOpenRouter(messages);
+    throwIfAborted(signal);
+    const raw = await callOpenRouter(messages, signal);
     const decision = parseDecision(raw);
 
     if (decision.type === 'final') {
@@ -679,12 +757,14 @@ export const runRepositoryAgent = async (input: RunAgentInput): Promise<RepoAgen
     }
 
     try {
+      throwIfAborted(signal);
       const result = await executeTool({
         tool: decision.tool,
         args: decision.args || {},
         repoId,
         memory,
         pushableRepoIds,
+        signal,
       });
       messages.push({ role: 'assistant', content: raw });
       messages.push({

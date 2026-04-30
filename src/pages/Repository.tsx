@@ -41,6 +41,7 @@ import CommitDiffViewer, { type DiffEntry } from '@/components/CommitDiffViewer'
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -562,6 +563,7 @@ const Repository = () => {
   const [importingRepoId, setImportingRepoId] = useState<number | null>(null);
   const [githubImportStatus, setGithubImportStatus] = useState('');
   const githubFetchedRef = useRef(false);
+  const agentAbortControllerRef = useRef<AbortController | null>(null);
 
   const editorDetectedLanguage = useMemo(() => {
     const ext = editorFilename.split('.').pop()?.toLowerCase() || '';
@@ -1108,6 +1110,10 @@ const Repository = () => {
     setAgentPendingAction(null);
   }, [agentRepoId]);
 
+  useEffect(() => () => {
+    agentAbortControllerRef.current?.abort(new Error('AI request was cancelled.'));
+  }, []);
+
   const appendAgentMessage = useCallback(
     (message: { role: 'user' | 'assistant'; content: string; steps?: string[] }) => {
       setAgentMessages((current) => [
@@ -1132,6 +1138,10 @@ const Repository = () => {
         return;
       }
 
+      agentAbortControllerRef.current?.abort(new Error('Previous AI request was cancelled.'));
+      const requestController = new AbortController();
+      agentAbortControllerRef.current = requestController;
+
       setIsAgentRunning(true);
       try {
         const memory = agentMemories[agentRepoId] || { currentRepoId: agentRepoId, recentFiles: [] };
@@ -1142,6 +1152,7 @@ const Repository = () => {
           pushableRepoIds,
           memory,
           forcedAction,
+          signal: requestController.signal,
         });
         setAgentMemories((current) => ({
           ...current,
@@ -1165,6 +1176,14 @@ const Repository = () => {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to run repository agent.';
+        if (error instanceof Error && error.name === 'AbortError') {
+          appendAgentMessage({
+            role: 'assistant',
+            content: message || 'AI request was cancelled.',
+            steps: ['Submit your request again when ready.'],
+          });
+          return;
+        }
         const normalizedMessage = message.toLowerCase();
         const isRateLimited = normalizedMessage.includes('(429)') || normalizedMessage.includes('rate-limit');
         const isAuthIssue =
@@ -1187,6 +1206,9 @@ const Repository = () => {
               : ['Retry and verify model availability in OpenRouter.'],
         });
       } finally {
+        if (agentAbortControllerRef.current === requestController) {
+          agentAbortControllerRef.current = null;
+        }
         setIsAgentRunning(false);
       }
     },
@@ -1257,9 +1279,32 @@ const Repository = () => {
             </div>
 
             {isBootstrapping && (
-              <Card>
-                <CardContent className="pt-6 text-sm text-muted-foreground">Loading repository data...</CardContent>
-              </Card>
+              <div className="space-y-6">
+                <Card className="border-accent/30 bg-accent/5">
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="flex gap-2">
+                      <Skeleton className="h-9 w-28 bg-accent/25" />
+                      <Skeleton className="h-9 w-32 bg-accent/20" />
+                      <Skeleton className="h-9 w-28 bg-accent/20" />
+                    </div>
+                    <div className="grid gap-6 lg:grid-cols-[320px_1fr] xl:grid-cols-[380px_1fr]">
+                      <div className="rounded-lg border border-accent/20 bg-card/60 p-4 space-y-3">
+                        <Skeleton className="h-6 w-44 bg-accent/25" />
+                        <Skeleton className="h-10 w-full bg-accent/20" />
+                        <Skeleton className="h-14 w-full bg-accent/20" />
+                        <Skeleton className="h-14 w-full bg-accent/20" />
+                        <Skeleton className="h-14 w-11/12 bg-accent/20" />
+                      </div>
+                      <div className="rounded-lg border border-accent/20 bg-card/60 p-4 space-y-3">
+                        <Skeleton className="h-6 w-40 bg-accent/25" />
+                        <Skeleton className="h-12 w-full bg-accent/20" />
+                        <Skeleton className="h-12 w-full bg-accent/20" />
+                        <Skeleton className="h-12 w-10/12 bg-accent/20" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
             {!isBootstrapping && bootstrapError && (
@@ -1408,7 +1453,14 @@ const Repository = () => {
                         </CardHeader>
                         <CardContent>
                           {isRepoDataLoading ? (
-                            <p className="text-sm text-muted-foreground">Loading files...</p>
+                            <div className="space-y-2">
+                              {Array.from({ length: 5 }).map((_, index) => (
+                                <div key={index} className="rounded-md border border-accent/20 bg-card/60 p-2">
+                                  <Skeleton className="h-4 w-3/5 bg-accent/25 mb-2" />
+                                  <Skeleton className="h-3 w-1/4 bg-accent/20" />
+                                </div>
+                              ))}
+                            </div>
                           ) : repositoryFiles.length === 0 ? (
                             <p className="text-sm text-muted-foreground">No files uploaded yet.</p>
                           ) : (
