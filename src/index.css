@@ -660,6 +660,150 @@
   border-radius: 4px;
 }
 
+/* Conversation history list */
+.tron-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.tron-history-list-panel {
+  max-height: none;
+  height: 100%;
+}
+
+.tron-history-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tron-history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tron-history-list::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+
+.tron-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: hsl(var(--card) / 0.45);
+  padding: 7px 8px 7px 10px;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.tron-history-item:hover {
+  border-color: hsl(var(--primary) / 0.45);
+  background: hsl(var(--card) / 0.72);
+}
+
+.tron-history-item-active {
+  border-color: hsl(var(--primary) / 0.7);
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.1) 0%,
+    hsl(var(--cyber-cyan) / 0.06) 100%
+  );
+  box-shadow: 0 0 16px hsl(var(--primary) / 0.18);
+}
+
+.tron-history-item-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tron-history-item-title {
+  font-size: 12px;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.tron-history-item-meta {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tron-history-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tron-history-item-time {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.tron-history-delete-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(var(--card) / 0.5);
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.tron-history-delete-btn:hover {
+  color: hsl(var(--destructive));
+  border-color: hsl(var(--destructive) / 0.6);
+  background: hsl(var(--destructive) / 0.08);
+}
+
+/* Message action buttons */
+.tron-msg-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tron-msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 9999px;
+  padding: 4px 8px;
+  background: hsl(var(--card) / 0.35);
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.tron-msg-action-btn:hover:not(:disabled) {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--primary) / 0.55);
+  background: hsl(var(--primary) / 0.08);
+}
+
+.tron-msg-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Suggestion chips */
 .tron-chip {
   cursor: pointer;

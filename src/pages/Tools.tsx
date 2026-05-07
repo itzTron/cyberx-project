@@ -4,9 +4,7 @@ import { Download, FolderGit2 } from 'lucide-react';
 
 import Footer from '@/components/Footer';
 import SectionHeader from '@/components/SectionHeader';
-import ToolCard from '@/components/ToolCard';
 import GlassCard from '@/components/GlassCard';
-import { tools } from '@/data/tools';
 import { downloadRepositoryAsZip, listPublicToolRepositories, type HubRepository } from '@/lib/hubApi';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
@@ -47,7 +45,7 @@ const Tools = () => {
         }
       } catch (error) {
         if (!cancelled) {
-          const message = error instanceof Error ? error.message : 'Unable to load public tool list.';
+          const message = error instanceof Error ? error.message : 'Unable to load public repo list.';
           setPublicToolsError(message);
           setPublicTools([]);
         }
@@ -95,56 +93,33 @@ const Tools = () => {
             className="text-center max-w-3xl mx-auto"
           >
             <span className="inline-block px-4 py-1.5 rounded-full text-xs font-mono font-medium bg-primary/10 text-primary border border-primary/30 mb-4">
-              TOOLS
+              REPOS
             </span>
             <h1 className="text-4xl md:text-6xl font-bold mb-6">
               <span className="text-foreground">Security </span>
-              <span className="text-primary neon-text">Tools</span>
+              <span className="text-primary neon-text">Repos</span>
             </h1>
             <p className="text-xl text-muted-foreground">
-              Explore the core CyberX tools and the community-maintained public tool list.
+              Explore the community-maintained public repo list.
             </p>
           </motion.div>
-        </div>
-      </section>
-
-      <section className="py-16 relative z-10">
-        <div className="container mx-auto px-4">
-          <SectionHeader
-            badge="CORE TOOLS"
-            title="CyberX Tool Collection"
-            description="Official tools curated for Cyberspace-X 2.0."
-          />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tools.map((tool, index) => (
-              <ToolCard
-                key={tool.slug}
-                icon={tool.icon}
-                title={tool.name}
-                description={tool.shortDescription}
-                slug={tool.slug}
-                features={tool.features}
-                delay={index * 0.05}
-              />
-            ))}
-          </div>
         </div>
       </section>
 
       <section className="py-8 pb-16 relative z-10">
         <div className="container mx-auto px-4">
           <SectionHeader
-            badge="PUBLIC TOOL LIST"
+            badge="PUBLIC REPO LIST"
             title="Published Public Repositories"
-            description="Repositories pushed by users and explicitly published to the public tool list."
+            description="Repositories pushed by users and explicitly published to the public repo list."
           />
 
           {isLoadingPublicTools ? (
-            <p className="text-center text-muted-foreground">Loading public tool list...</p>
+            <p className="text-center text-muted-foreground">Loading public repo list...</p>
           ) : publicToolsError ? (
             <p className="text-center text-destructive">{publicToolsError}</p>
           ) : publicTools.length === 0 ? (
-            <p className="text-center text-muted-foreground">No repositories have been published to the public tool list yet.</p>
+            <p className="text-center text-muted-foreground">No repositories have been published to the public repo list yet.</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {publicTools.map((repo, index) => (

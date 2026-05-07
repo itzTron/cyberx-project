@@ -20,7 +20,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 const navLinks: { href: string; label: string; icon?: React.ReactNode }[] = [
   { href: '/', label: 'Home' },
   { href: '/features', label: 'Features' },
-  { href: '/tools', label: 'Tools' },
+  { href: '/tools', label: 'Repos' },
   { href: '/dashboard', label: 'Hub' },
   { href: '/tron', label: 'Tron', icon: <Bot className="h-3.5 w-3.5" /> },
   { href: '/download', label: 'Download' },
