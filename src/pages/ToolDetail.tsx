@@ -121,9 +121,9 @@ const ToolDetail = () => {
                     </a>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link to={`/download?tool=${encodeURIComponent(tool.slug)}`}>
+                    <Link to="/docs">
                       <Terminal className="w-4 h-4 mr-2" />
-                      Open Tool Download Page
+                      Open Documentation
                     </Link>
                   </Button>
                 </div>

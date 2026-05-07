@@ -19,24 +19,20 @@ import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
 const navLinks: { href: string; label: string; icon?: React.ReactNode }[] = [
   { href: '/', label: 'Home' },
-  { href: '/features', label: 'Features' },
   { href: '/tools', label: 'Repos' },
   { href: '/dashboard', label: 'Hub' },
   { href: '/tron', label: 'Tron', icon: <Bot className="h-3.5 w-3.5" /> },
-  { href: '/download', label: 'Download' },
   { href: '/docs', label: 'Docs' },
   { href: '/contact', label: 'Contact' },
 ];
 
 const reservedTopLevelRoutes = new Set([
-  'features',
   'tools',
   'dashboard',
   'repository',
   'profile',
   'activity',
   'tron',
-  'download',
   'docs',
   'contact',
   'signin',

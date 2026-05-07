@@ -27,9 +27,9 @@ const Footer = () => {
             <h4 className="font-semibold text-foreground mb-4">Quick Links</h4>
             <ul className="space-y-2">
               {[
-                { to: '/features', label: 'Features' },
+                { to: '/', label: 'Home' },
                 { to: '/tools', label: 'Repos' },
-                { to: '/download', label: 'Download' },
+                { to: '/contact', label: 'Contact' },
                 { to: '/docs', label: 'Documentation' },
               ].map((link) => (
                 <li key={link.to}>

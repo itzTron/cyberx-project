@@ -7,9 +7,7 @@ import MatrixRain from '@/components/MatrixRain';
 
 import Footer from '@/components/Footer';
 import SectionHeader from '@/components/SectionHeader';
-import ToolCard from '@/components/ToolCard';
 import GlassCard from '@/components/GlassCard';
-import { tools } from '@/data/tools';
 
 const TYPEWRITER_TEXT = '2.0';
 const TYPING_SPEED = 200;    // ms per character
@@ -59,8 +57,7 @@ const Index = () => {
 
 
 
-      <section className="relative min-h-screen flex items-center justify-center pt-16">
-        <div className="hero-gradient absolute inset-0" />
+      <section className="relative min-h-screen flex items-center justify-center pt-24 md:pt-28">
         <div className="container mx-auto px-4 relative z-20">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -68,16 +65,6 @@ const Index = () => {
             transition={{ duration: 0.8 }}
             className="text-center max-w-4xl mx-auto"
           >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 mb-6"
-            >
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              <span className="text-sm font-mono text-primary">v0.1.0-alpha | Security First</span>
-            </motion.div>
-
             <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
               <span className="text-primary neon-text">
                 Cyberspace-X{' '}
@@ -101,14 +88,14 @@ const Index = () => {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Button asChild size="lg" className="neon-border text-lg px-8">
-                <Link to="/download">
-                  Download CyberX
+              <Button asChild size="lg" className="neon-border">
+                <Link to="/tools">
+                  Get Started Free
                   <ArrowRight className="ml-2 w-5 h-5" />
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="lg" className="text-lg px-8">
-                <Link to="/features">View Features</Link>
+              <Button asChild variant="outline" size="lg">
+                <Link to="/docs">Read Documentation</Link>
               </Button>
             </div>
 
@@ -143,44 +130,6 @@ const Index = () => {
       <section className="py-24 relative z-20">
         <div className="container mx-auto px-4">
           <SectionHeader
-            badge="SECURITY SUITE"
-            title="Powerful Security Tools"
-            description="Cyberspace-X 2.0 provides a focused set of security tools designed to protect, analyze, and secure your digital infrastructure."
-          />
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tools.slice(0, 6).map((tool, index) => (
-              <ToolCard
-                key={tool.slug}
-                icon={tool.icon}
-                title={tool.name}
-                description={tool.shortDescription}
-                slug={tool.slug}
-                features={tool.features}
-                delay={index * 0.1}
-              />
-            ))}
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            className="text-center mt-12"
-          >
-            <Button asChild variant="outline" size="lg">
-              <Link to="/tools">
-                View All Tools
-                <ArrowRight className="ml-2 w-4 h-4" />
-              </Link>
-            </Button>
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="py-24 relative z-20 cyber-gradient">
-        <div className="container mx-auto px-4">
-          <SectionHeader
             badge="WHY CYBERSPACE-X 2.0"
             title="Security-First Architecture"
             description="Built from the ground up with security as the primary focus, not an afterthought."
@@ -211,28 +160,6 @@ const Index = () => {
               </p>
             </GlassCard>
           </div>
-        </div>
-      </section>
-
-      <section className="py-24 relative z-20">
-        <div className="container mx-auto px-4">
-          <GlassCard className="text-center max-w-3xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">Ready to Secure Your Systems?</h2>
-            <p className="text-muted-foreground text-lg mb-8">
-              Start with CyberX and expand with specialized security tools across the Cyberspace-X 2.0 platform.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button asChild size="lg" className="neon-border">
-                <Link to="/download">
-                  Get Started Free
-                  <ArrowRight className="ml-2 w-5 h-5" />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link to="/docs">Read Documentation</Link>
-              </Button>
-            </div>
-          </GlassCard>
         </div>
       </section>
 

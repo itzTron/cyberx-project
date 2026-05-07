@@ -8,10 +8,8 @@ import Preloader from "./components/Preloader";
 import NavigationProgress from "./components/NavigationProgress";
 import Navbar from "./components/Navbar";
 import Index from "./pages/Index";
-import Features from "./pages/Features";
 import Tools from "./pages/Tools";
 import ToolDetail from "./pages/ToolDetail";
-import Download from "./pages/Download";
 import Docs from "./pages/Docs";
 import Contact from "./pages/Contact";
 import SignIn from "./pages/SignIn";
@@ -46,10 +44,8 @@ const App = () => {
           <Navbar />
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/features" element={<Features />} />
             <Route path="/tools" element={<Tools />} />
             <Route path="/tools/:slug" element={<ToolDetail />} />
-            <Route path="/download" element={<Download />} />
             <Route path="/docs" element={<Docs />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/signin" element={<SignIn />} />
