@@ -35,6 +35,7 @@ const reservedTopLevelRoutes = new Set([
   'tron',
   'docs',
   'contact',
+  'privacy-policy',
   'signin',
   'signup',
 ]);

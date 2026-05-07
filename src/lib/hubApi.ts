@@ -2482,3 +2482,169 @@ export const importGitHubRepository = async ({
 
   return repository;
 };
+
+export type TronChatStoredMessage = {
+  id: string;
+  role: 'tron' | 'user' | 'system';
+  content: string;
+  steps?: string[];
+  isWelcome?: boolean;
+  pendingAction?: any;
+  timestamp: string;
+};
+
+export type TronChatThreadState = {
+  id: string;
+  title: string;
+  customTitle?: boolean;
+  repoId: string;
+  repoName: string;
+  memory: {
+    currentRepoId: string;
+    recentFiles: string[];
+  };
+  messages: TronChatStoredMessage[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TronChatState = {
+  threads: TronChatThreadState[];
+  activeThreadId: string;
+};
+
+const normalizeTronMessage = (raw: any): TronChatStoredMessage | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = String(raw.id || '').trim();
+  const role = raw.role === 'tron' || raw.role === 'user' || raw.role === 'system' ? raw.role : null;
+  if (!id || !role) return null;
+
+  return {
+    id,
+    role,
+    content: String(raw.content || ''),
+    steps: Array.isArray(raw.steps) ? raw.steps.map((step) => String(step)).filter(Boolean) : undefined,
+    isWelcome: Boolean(raw.isWelcome),
+    pendingAction: raw.pendingAction && typeof raw.pendingAction === 'object' ? raw.pendingAction : undefined,
+    timestamp: String(raw.timestamp || new Date().toISOString()),
+  };
+};
+
+const normalizeTronThread = (raw: any): TronChatThreadState | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = String(raw.id || '').trim();
+  if (!id) return null;
+
+  const messages = Array.isArray(raw.messages)
+    ? (raw.messages.map(normalizeTronMessage).filter(Boolean) as TronChatStoredMessage[])
+    : [];
+
+  return {
+    id,
+    title: String(raw.title || 'New conversation'),
+    customTitle: Boolean(raw.customTitle),
+    repoId: String(raw.repoId || ''),
+    repoName: String(raw.repoName || ''),
+    memory: {
+      currentRepoId: String(raw?.memory?.currentRepoId || ''),
+      recentFiles: Array.isArray(raw?.memory?.recentFiles)
+        ? raw.memory.recentFiles.map((path: unknown) => String(path)).filter(Boolean)
+        : [],
+    },
+    messages,
+    createdAt: String(raw.createdAt || new Date().toISOString()),
+    updatedAt: String(raw.updatedAt || raw.createdAt || new Date().toISOString()),
+  };
+};
+
+export const getTronChatState = async (): Promise<TronChatState> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { data, error } = await supabase
+    .from('tron_chat_state')
+    .select('threads_json, active_thread_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    return {
+      threads: [],
+      activeThreadId: '',
+    };
+  }
+
+  const normalizedThreads = Array.isArray(data.threads_json)
+    ? (data.threads_json.map(normalizeTronThread).filter(Boolean) as TronChatThreadState[])
+    : [];
+
+  return {
+    threads: normalizedThreads,
+    activeThreadId: String(data.active_thread_id || ''),
+  };
+};
+
+export const saveTronChatState = async ({
+  threads,
+  activeThreadId,
+  activityType,
+  activityContext,
+}: {
+  threads: TronChatThreadState[];
+  activeThreadId: string;
+  activityType?: string;
+  activityContext?: Record<string, unknown>;
+}) => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const normalizedThreads = threads.map((thread) => ({
+    id: String(thread.id || ''),
+    title: String(thread.title || 'New conversation'),
+    customTitle: Boolean(thread.customTitle),
+    repoId: String(thread.repoId || ''),
+    repoName: String(thread.repoName || ''),
+    memory: {
+      currentRepoId: String(thread.memory?.currentRepoId || ''),
+      recentFiles: Array.isArray(thread.memory?.recentFiles)
+        ? thread.memory.recentFiles.map((path) => String(path)).filter(Boolean)
+        : [],
+    },
+    messages: Array.isArray(thread.messages)
+      ? thread.messages.map((message) => ({
+          id: String(message.id || ''),
+          role: message.role === 'tron' || message.role === 'user' || message.role === 'system' ? message.role : 'system',
+          content: String(message.content || ''),
+          steps: Array.isArray(message.steps) ? message.steps.map((step) => String(step)).filter(Boolean) : undefined,
+          isWelcome: Boolean(message.isWelcome),
+          pendingAction:
+            message.pendingAction && typeof message.pendingAction === 'object' ? message.pendingAction : undefined,
+          timestamp: String(message.timestamp || new Date().toISOString()),
+        }))
+      : [],
+    createdAt: String(thread.createdAt || new Date().toISOString()),
+    updatedAt: String(thread.updatedAt || new Date().toISOString()),
+  }));
+
+  const { error } = await supabase.from('tron_chat_state').upsert(
+    {
+      user_id: user.id,
+      active_thread_id: activeThreadId || '',
+      threads_json: normalizedThreads,
+    },
+    { onConflict: 'user_id' },
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (activityType) {
+    await pushActivity({
+      userId: user.id,
+      email: user.email || '',
+      activityType,
+      context: activityContext || {},
+    });
+  }
+};

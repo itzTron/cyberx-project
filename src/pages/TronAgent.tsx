@@ -8,10 +8,12 @@ import {
   CheckCircle2,
   ChevronDown,
   Copy,
+  Pencil,
   Flag,
   FolderGit2,
   History,
   Loader2,
+  MoreHorizontal,
   Plus,
   Send,
   Sparkles,
@@ -23,9 +25,26 @@ import {
 import Footer from '@/components/Footer';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
-import { getDashboardBootstrap, listPushableRepositories, type DashboardBootstrap, type HubRepository } from '@/lib/hubApi';
+import {
+  getDashboardBootstrap,
+  getTronChatState,
+  listPushableRepositories,
+  saveTronChatState,
+  type DashboardBootstrap,
+  type HubRepository,
+  type TronChatThreadState,
+} from '@/lib/hubApi';
 import { runRepositoryAgent, type RepoAgentMemory, type RepoAgentResult, type RepoAgentAction } from '@/lib/repoAgent';
 
 /* ------------------------------------------------------------------ */
@@ -52,6 +71,7 @@ type StoredChatMessage = Omit<ChatMessage, 'timestamp' | 'isLoading'> & {
 type ChatThread = {
   id: string;
   title: string;
+  customTitle?: boolean;
   repoId: string;
   repoName: string;
   memory: RepoAgentMemory;
@@ -77,6 +97,8 @@ type ChatReportRecord = {
 const MAX_CHAT_THREADS = 30;
 const MAX_MESSAGES_PER_THREAD = 220;
 const MAX_REPORT_RECORDS = 300;
+const TITLE_ERASE_SPEED_MS = 110;
+const TITLE_TYPE_SPEED_MS = 130;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
@@ -176,6 +198,7 @@ const createThread = ({
     thread: {
       id: `thread_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       title: 'New conversation',
+      customTitle: false,
       repoId,
       repoName,
       memory: {
@@ -231,11 +254,18 @@ const TronAgent = () => {
   const [reportedMessageIds, setReportedMessageIds] = useState<Set<string>>(new Set());
   const [copiedMessageId, setCopiedMessageId] = useState('');
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTargetThreadId, setRenameTargetThreadId] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+  const [threadTitleDisplayMap, setThreadTitleDisplayMap] = useState<Record<string, string>>({});
+  const [threadTitleAnimatingMap, setThreadTitleAnimatingMap] = useState<Record<string, boolean>>({});
 
   /* Refs */
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const agentAbortControllerRef = useRef<AbortController | null>(null);
+  const renameAnimationTimersRef = useRef<Record<string, number[]>>({});
 
   /* ---- Bootstrap ---- */
   useEffect(() => {
@@ -257,19 +287,63 @@ const TronAgent = () => {
         let hydratedActiveId = '';
 
         try {
-          const rawHistory = localStorage.getItem(historyStorageKey);
-          if (rawHistory) {
-            const parsed = JSON.parse(rawHistory) as { threads?: ChatThread[]; activeThreadId?: string };
-            if (Array.isArray(parsed.threads)) {
-              hydratedThreads = parsed.threads
-                .filter((thread) => Array.isArray(thread.messages) && typeof thread.id === 'string')
-                .slice(0, MAX_CHAT_THREADS);
-              hydratedActiveId = parsed.activeThreadId || '';
+          const dbState = await getTronChatState();
+          hydratedThreads = (dbState.threads || [])
+            .filter((thread) => Array.isArray(thread.messages) && typeof thread.id === 'string')
+            .slice(0, MAX_CHAT_THREADS)
+            .map((thread) => ({
+              ...thread,
+              customTitle: Boolean(thread.customTitle),
+            }));
+          hydratedActiveId = dbState.activeThreadId || '';
+
+          if (hydratedThreads.length === 0) {
+            const rawHistory = localStorage.getItem(historyStorageKey);
+            if (rawHistory) {
+              const parsed = JSON.parse(rawHistory) as { threads?: ChatThread[]; activeThreadId?: string };
+              if (Array.isArray(parsed.threads)) {
+                hydratedThreads = parsed.threads
+                  .filter((thread) => Array.isArray(thread.messages) && typeof thread.id === 'string')
+                  .slice(0, MAX_CHAT_THREADS)
+                  .map((thread) => ({
+                    ...thread,
+                    customTitle: Boolean(thread.customTitle),
+                  }));
+                hydratedActiveId = parsed.activeThreadId || '';
+
+                if (hydratedThreads.length > 0) {
+                  await saveTronChatState({
+                    threads: hydratedThreads as TronChatThreadState[],
+                    activeThreadId: hydratedActiveId,
+                    activityType: 'tron_chat_history_migrated',
+                    activityContext: {
+                      thread_count: hydratedThreads.length,
+                    },
+                  });
+                }
+              }
             }
           }
         } catch {
-          hydratedThreads = [];
-          hydratedActiveId = '';
+          try {
+            const rawHistory = localStorage.getItem(historyStorageKey);
+            if (rawHistory) {
+              const parsed = JSON.parse(rawHistory) as { threads?: ChatThread[]; activeThreadId?: string };
+              if (Array.isArray(parsed.threads)) {
+                hydratedThreads = parsed.threads
+                  .filter((thread) => Array.isArray(thread.messages) && typeof thread.id === 'string')
+                  .slice(0, MAX_CHAT_THREADS)
+                  .map((thread) => ({
+                    ...thread,
+                    customTitle: Boolean(thread.customTitle),
+                  }));
+                hydratedActiveId = parsed.activeThreadId || '';
+              }
+            }
+          } catch {
+            hydratedThreads = [];
+            hydratedActiveId = '';
+          }
         }
 
         if (hydratedThreads.length === 0) {
@@ -335,7 +409,8 @@ const TronAgent = () => {
         if (thread.id !== activeThreadId) return thread;
         return {
           ...thread,
-          title,
+          title: thread.customTitle ? thread.title : title,
+          customTitle: Boolean(thread.customTitle),
           repoId: selectedRepoId || thread.repoId,
           repoName: repoName || thread.repoName,
           memory: {
@@ -351,20 +426,16 @@ const TronAgent = () => {
     });
   }, [activeThreadId, agentMemory, messages, repositories, selectedRepoId]);
 
-  /* Persist thread list to localStorage */
+  /* Persist thread list to database */
   useEffect(() => {
-    if (!user) return;
-    try {
-      localStorage.setItem(
-        getChatHistoryStorageKey(user.id),
-        JSON.stringify({
-          threads: chatThreads.slice(0, MAX_CHAT_THREADS),
-          activeThreadId,
-        }),
-      );
-    } catch {
-      // Ignore storage quota/runtime errors.
-    }
+    if (!user || !activeThreadId) return;
+    const timer = window.setTimeout(() => {
+      void saveTronChatState({
+        threads: chatThreads as TronChatThreadState[],
+        activeThreadId,
+      });
+    }, 320);
+    return () => window.clearTimeout(timer);
   }, [activeThreadId, chatThreads, user]);
 
   /* Auto-scroll to bottom */
@@ -392,6 +463,25 @@ const TronAgent = () => {
     return () => window.clearTimeout(timer);
   }, [copiedMessageId]);
 
+  useEffect(() => {
+    if (!renameDialogOpen) return;
+    const timer = window.setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [renameDialogOpen]);
+
+  useEffect(
+    () => () => {
+      Object.values(renameAnimationTimersRef.current).forEach((timers) => {
+        timers.forEach((timerId) => window.clearTimeout(timerId));
+      });
+      renameAnimationTimersRef.current = {};
+    },
+    [],
+  );
+
   /* ---- Helpers ---- */
   const selectedRepo = repositories.find((r) => r.id === selectedRepoId) ?? null;
 
@@ -399,6 +489,70 @@ const TronAgent = () => {
 
   const updateMessage = (id: string, patch: Partial<ChatMessage>) =>
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+
+  const persistThreadHistory = async ({
+    threads,
+    nextActiveThreadId = activeThreadId,
+    activityType,
+    activityContext,
+  }: {
+    threads: ChatThread[];
+    nextActiveThreadId?: string;
+    activityType?: string;
+    activityContext?: Record<string, unknown>;
+  }) => {
+    if (!user || !nextActiveThreadId) return;
+    try {
+      await saveTronChatState({
+        threads: threads as TronChatThreadState[],
+        activeThreadId: nextActiveThreadId,
+        activityType,
+        activityContext,
+      });
+    } catch (error) {
+      console.error('Unable to persist Tron chat state:', error);
+    }
+  };
+
+  const clearRenameAnimationTimers = (threadId: string) => {
+    const timers = renameAnimationTimersRef.current[threadId] || [];
+    timers.forEach((timerId) => window.clearTimeout(timerId));
+    delete renameAnimationTimersRef.current[threadId];
+    setThreadTitleAnimatingMap((prev) => ({ ...prev, [threadId]: false }));
+  };
+
+  const animateThreadTitleChange = (threadId: string, previousTitle: string, nextTitle: string) => {
+    clearRenameAnimationTimers(threadId);
+    const scheduledTimers: number[] = [];
+    renameAnimationTimersRef.current[threadId] = scheduledTimers;
+    setThreadTitleAnimatingMap((prev) => ({ ...prev, [threadId]: true }));
+    setThreadTitleDisplayMap((prev) => ({ ...prev, [threadId]: previousTitle }));
+
+    let delay = 0;
+    for (let i = previousTitle.length - 1; i >= 0; i -= 1) {
+      const frame = previousTitle.slice(0, i);
+      const timerId = window.setTimeout(() => {
+        setThreadTitleDisplayMap((prev) => ({ ...prev, [threadId]: frame }));
+      }, delay);
+      scheduledTimers.push(timerId);
+      delay += TITLE_ERASE_SPEED_MS;
+    }
+
+    delay += 180;
+    for (let i = 1; i <= nextTitle.length; i += 1) {
+      const frame = nextTitle.slice(0, i);
+      const timerId = window.setTimeout(() => {
+        setThreadTitleDisplayMap((prev) => ({ ...prev, [threadId]: frame }));
+      }, delay);
+      scheduledTimers.push(timerId);
+      delay += TITLE_TYPE_SPEED_MS;
+    }
+
+    const doneTimerId = window.setTimeout(() => {
+      setThreadTitleAnimatingMap((prev) => ({ ...prev, [threadId]: false }));
+    }, delay + 60);
+    scheduledTimers.push(doneTimerId);
+  };
 
   const activateThread = (thread: ChatThread) => {
     const repoExists = repositories.some((repo) => repo.id === thread.repoId);
@@ -423,12 +577,22 @@ const TronAgent = () => {
       includeWelcome: false,
     });
 
-    setChatThreads((prev) => [thread, ...prev].slice(0, MAX_CHAT_THREADS));
+    const nextThreads = [thread, ...chatThreads].slice(0, MAX_CHAT_THREADS);
+    setChatThreads(nextThreads);
     setActiveThreadId(thread.id);
     setMessages(initialMessages);
     setAgentMemory({ currentRepoId: thread.repoId, recentFiles: [] });
     setInputValue('');
     setHistoryPanelOpen(false);
+    void persistThreadHistory({
+      threads: nextThreads,
+      nextActiveThreadId: thread.id,
+      activityType: 'tron_chat_created',
+      activityContext: {
+        thread_id: thread.id,
+        repo_id: thread.repoId || null,
+      },
+    });
   };
 
   const handleSelectThread = (threadId: string) => {
@@ -447,6 +611,17 @@ const TronAgent = () => {
     if (!confirmed) return;
 
     const remainingThreads = chatThreads.filter((thread) => thread.id !== threadId);
+    clearRenameAnimationTimers(threadId);
+    setThreadTitleDisplayMap((prev) => {
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+    setThreadTitleAnimatingMap((prev) => {
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
 
     try {
       const reportsStorageKey = getChatReportsStorageKey(user.id);
@@ -473,15 +648,43 @@ const TronAgent = () => {
         includeWelcome: false,
       });
 
-      setChatThreads([thread]);
+      const nextThreads = [thread];
+      setChatThreads(nextThreads);
       setActiveThreadId(thread.id);
       setMessages(initialMessages);
       setAgentMemory(thread.memory);
       setInputValue('');
+      void persistThreadHistory({
+        threads: nextThreads,
+        nextActiveThreadId: thread.id,
+        activityType: 'tron_chat_deleted',
+        activityContext: {
+          deleted_thread_id: threadId,
+          replacement_thread_id: thread.id,
+        },
+      });
     } else {
       setChatThreads(remainingThreads);
       if (activeThreadId === threadId) {
         activateThread(remainingThreads[0]);
+        void persistThreadHistory({
+          threads: remainingThreads,
+          nextActiveThreadId: remainingThreads[0].id,
+          activityType: 'tron_chat_deleted',
+          activityContext: {
+            deleted_thread_id: threadId,
+            replacement_thread_id: remainingThreads[0].id,
+          },
+        });
+      } else {
+        void persistThreadHistory({
+          threads: remainingThreads,
+          nextActiveThreadId: activeThreadId,
+          activityType: 'tron_chat_deleted',
+          activityContext: {
+            deleted_thread_id: threadId,
+          },
+        });
       }
     }
 
@@ -489,6 +692,64 @@ const TronAgent = () => {
       title: 'Conversation deleted',
       description: `"${targetThread.title || 'Conversation'}" has been removed from history.`,
     });
+  };
+
+  const openRenameDialog = (thread: ChatThread) => {
+    const currentTitle = (thread.title || 'Conversation').trim();
+    setRenameTargetThreadId(thread.id);
+    setRenameValue(currentTitle);
+    setRenameDialogOpen(true);
+  };
+
+  const handleRenameConversation = () => {
+    const nextTitle = renameValue.trim();
+    if (!renameTargetThreadId || !nextTitle) {
+      toast({
+        title: 'Invalid name',
+        description: 'Please enter a valid chat name.',
+      });
+      return;
+    }
+
+    const targetThread = chatThreads.find((thread) => thread.id === renameTargetThreadId);
+    if (!targetThread) {
+      setRenameDialogOpen(false);
+      return;
+    }
+
+    const previousTitle = targetThread.title || 'Conversation';
+    if (nextTitle === previousTitle) {
+      setRenameDialogOpen(false);
+      return;
+    }
+
+    setChatThreads((prev) => {
+      const nextThreads = prev.map((thread) =>
+        thread.id === renameTargetThreadId
+          ? {
+              ...thread,
+              title: nextTitle,
+              customTitle: true,
+              updatedAt: new Date().toISOString(),
+            }
+          : thread,
+      );
+      void persistThreadHistory({
+        threads: nextThreads,
+        nextActiveThreadId: activeThreadId,
+        activityType: 'tron_chat_renamed',
+        activityContext: {
+          thread_id: renameTargetThreadId,
+          previous_title: previousTitle,
+          next_title: nextTitle,
+        },
+      });
+      return nextThreads;
+    });
+    animateThreadTitleChange(renameTargetThreadId, previousTitle, nextTitle);
+    setRenameDialogOpen(false);
+    setRenameTargetThreadId('');
+    setRenameValue('');
   };
 
   const copyToClipboard = async (text: string) => {
@@ -752,20 +1013,47 @@ const TronAgent = () => {
                       return (
                         <div key={thread.id} className={`tron-history-item ${isActive ? 'tron-history-item-active' : ''}`}>
                           <button type="button" onClick={() => handleSelectThread(thread.id)} className="tron-history-item-main">
-                            <span className="tron-history-item-title">{thread.title || 'Conversation'}</span>
+                            <span className="tron-history-item-title">
+                              {threadTitleDisplayMap[thread.id] ?? thread.title ?? 'Conversation'}
+                              {threadTitleAnimatingMap[thread.id] && <span className="tron-history-edit-cursor">|</span>}
+                            </span>
                             <span className="tron-history-item-meta">{subtitle}</span>
                           </button>
                           <div className="tron-history-item-right">
                             <span className="tron-history-item-time">{formatThreadUpdatedAt(thread.updatedAt)}</span>
-                            <button
-                              type="button"
-                              className="tron-history-delete-btn"
-                              onClick={() => handleDeleteConversation(thread.id)}
-                              title="Delete conversation"
-                              aria-label="Delete conversation"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="tron-history-menu-btn"
+                                  title="Chat options"
+                                  aria-label="Chat options"
+                                >
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                <DropdownMenuItem
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    openRenameDialog(thread);
+                                  }}
+                                >
+                                  <Pencil className="h-3.5 w-3.5 mr-2" />
+                                  Rename Chat
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    handleDeleteConversation(thread.id);
+                                  }}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                  Delete Chat
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       );
@@ -776,6 +1064,46 @@ const TronAgent = () => {
             </div>
           </SheetContent>
         </Sheet>
+
+        <Dialog
+          open={renameDialogOpen}
+          onOpenChange={(open) => {
+            setRenameDialogOpen(open);
+            if (!open) {
+              setRenameTargetThreadId('');
+              setRenameValue('');
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md border-border bg-card/95 backdrop-blur-xl">
+            <DialogHeader>
+              <DialogTitle>Rename Chat</DialogTitle>
+              <DialogDescription>Enter a new chat name and press Enter to apply it.</DialogDescription>
+            </DialogHeader>
+            <input
+              ref={renameInputRef}
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleRenameConversation();
+                }
+              }}
+              maxLength={64}
+              className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              placeholder="Conversation name"
+            />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenameDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" className="neon-border" onClick={handleRenameConversation}>
+                Rename
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Repo selector */}
         <motion.div

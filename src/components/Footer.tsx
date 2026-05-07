@@ -78,13 +78,13 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
-                <a
-                  href="#"
+                <Link
+                  to="/privacy-policy"
                   className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-2"
                 >
                   <Lock className="w-4 h-4" />
-                  Privacy
-                </a>
+                  Privacy Policy
+                </Link>
               </li>
             </ul>
           </div>

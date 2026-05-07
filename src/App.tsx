@@ -19,6 +19,7 @@ import Repository from "./pages/Repository";
 import Profile from "./pages/Profile";
 import Activity from "./pages/Activity";
 import TronAgent from "./pages/TronAgent";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -55,6 +56,7 @@ const App = () => {
             <Route path="/profile" element={<Profile />} />
             <Route path="/activity" element={<Activity />} />
             <Route path="/tron" element={<TronAgent />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/:username" element={<Dashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
