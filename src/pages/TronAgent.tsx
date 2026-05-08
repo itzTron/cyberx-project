@@ -266,6 +266,8 @@ const TronAgent = () => {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const agentAbortControllerRef = useRef<AbortController | null>(null);
   const renameAnimationTimersRef = useRef<Record<string, number[]>>({});
+  const chatThreadsRef = useRef<typeof chatThreads>(chatThreads);
+  const activeThreadIdRef = useRef(activeThreadId);
 
   /* ---- Bootstrap ---- */
   useEffect(() => {
@@ -402,13 +404,16 @@ const TronAgent = () => {
     const repoName = selectedRepo?.name || '';
 
     setChatThreads((previous) => {
-      const exists = previous.some((thread) => thread.id === activeThreadId);
-      if (!exists) return previous;
+      const activeThread = previous.find((thread) => thread.id === activeThreadId);
+      // If the active thread isn't in state yet (new thread still batching), do nothing.
+      // Returning the same reference means no re-render and no chained saves.
+      if (!activeThread) return previous;
 
       const updated = previous.map((thread) => {
         if (thread.id !== activeThreadId) return thread;
         return {
           ...thread,
+          // Always respect customTitle — never overwrite a user-set name
           title: thread.customTitle ? thread.title : title,
           customTitle: Boolean(thread.customTitle),
           repoId: selectedRepoId || thread.repoId,
@@ -426,13 +431,22 @@ const TronAgent = () => {
     });
   }, [activeThreadId, agentMemory, messages, repositories, selectedRepoId]);
 
+  /* Keep refs in sync so setTimeout callbacks always read latest state */
+  useEffect(() => {
+    chatThreadsRef.current = chatThreads;
+    activeThreadIdRef.current = activeThreadId;
+  });
+
   /* Persist thread list to database */
   useEffect(() => {
     if (!user || !activeThreadId) return;
     const timer = window.setTimeout(() => {
+      const latestThreads = chatThreadsRef.current;
+      const latestActiveId = activeThreadIdRef.current;
+      if (!latestActiveId) return;
       void saveTronChatState({
-        threads: chatThreads as TronChatThreadState[],
-        activeThreadId,
+        threads: latestThreads as TronChatThreadState[],
+        activeThreadId: latestActiveId,
       });
     }, 320);
     return () => window.clearTimeout(timer);
@@ -723,28 +737,26 @@ const TronAgent = () => {
       return;
     }
 
-    setChatThreads((prev) => {
-      const nextThreads = prev.map((thread) =>
-        thread.id === renameTargetThreadId
-          ? {
-              ...thread,
-              title: nextTitle,
-              customTitle: true,
-              updatedAt: new Date().toISOString(),
-            }
-          : thread,
-      );
-      void persistThreadHistory({
-        threads: nextThreads,
-        nextActiveThreadId: activeThreadId,
-        activityType: 'tron_chat_renamed',
-        activityContext: {
-          thread_id: renameTargetThreadId,
-          previous_title: previousTitle,
-          next_title: nextTitle,
-        },
-      });
-      return nextThreads;
+    const nextThreads = chatThreads.map((thread) =>
+      thread.id === renameTargetThreadId
+        ? {
+            ...thread,
+            title: nextTitle,
+            customTitle: true,
+            updatedAt: new Date().toISOString(),
+          }
+        : thread,
+    );
+    setChatThreads(nextThreads);
+    void persistThreadHistory({
+      threads: nextThreads,
+      nextActiveThreadId: activeThreadId,
+      activityType: 'tron_chat_renamed',
+      activityContext: {
+        thread_id: renameTargetThreadId,
+        previous_title: previousTitle,
+        next_title: nextTitle,
+      },
     });
     animateThreadTitleChange(renameTargetThreadId, previousTitle, nextTitle);
     setRenameDialogOpen(false);
