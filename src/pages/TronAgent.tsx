@@ -144,8 +144,21 @@ const formatThreadUpdatedAt = (isoDate: string) => {
 
 const deriveThreadTitle = (messages: ChatMessage[]) => {
   const firstUserPrompt = messages.find((msg) => msg.role === 'user' && msg.content.trim());
-  if (firstUserPrompt) return truncate(firstUserPrompt.content, 50);
-  return 'New conversation';
+  if (!firstUserPrompt) return 'New conversation';
+
+  // Extract first 5 meaningful words from the user's first message
+  const words = firstUserPrompt.content
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[^\w\s'-]/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (words.length === 0) return 'New conversation';
+
+  const title = words.join(' ');
+  return title.charAt(0).toUpperCase() + title.slice(1);
 };
 
 const makeWelcomeMessage = (firstName: string) =>
