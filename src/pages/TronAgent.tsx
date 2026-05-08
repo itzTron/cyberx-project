@@ -238,6 +238,143 @@ const TypingDots = () => (
 );
 
 /* ------------------------------------------------------------------ */
+/*  Lightweight markdown renderer for Tron messages                     */
+/* ------------------------------------------------------------------ */
+
+const renderInlineMarkdown = (text: string): React.ReactNode[] => {
+  // Split on **bold**, `code`, and plain text
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/);
+  return parts.map((part, i) => {
+    if (/^\*\*[^*]+\*\*$/.test(part)) {
+      return <strong key={i} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+    }
+    if (/^`[^`]+`$/.test(part)) {
+      return (
+        <code key={i} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono text-xs">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+};
+
+const TronMarkdown = ({ content }: { content: string }) => {
+  const lines = content.split('\n');
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Code block: ```...```
+    if (line.trimStart().startsWith('```')) {
+      const codeLines: string[] = [];
+      const lang = line.trimStart().slice(3).trim();
+      i += 1;
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i += 1;
+      }
+      i += 1; // skip closing ```
+      elements.push(
+        <div key={elements.length} className="my-2 rounded-lg overflow-hidden border border-border/50">
+          {lang && (
+            <div className="px-3 py-1 text-[10px] font-mono text-muted-foreground bg-muted/30 border-b border-border/50">
+              {lang}
+            </div>
+          )}
+          <pre className="px-3 py-2 overflow-x-auto bg-muted/20">
+            <code className="text-xs font-mono text-foreground/90">{codeLines.join('\n')}</code>
+          </pre>
+        </div>,
+      );
+      continue;
+    }
+
+    // Blank line
+    if (!line.trim()) {
+      elements.push(<div key={elements.length} className="h-2" />);
+      i += 1;
+      continue;
+    }
+
+    // Heading: ## or ###
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2];
+      const cls = level === 1
+        ? 'text-base font-bold text-foreground mt-2 mb-1'
+        : level === 2
+          ? 'text-sm font-bold text-foreground mt-2 mb-1'
+          : 'text-sm font-semibold text-foreground/90 mt-1 mb-0.5';
+      elements.push(
+        <div key={elements.length} className={cls}>
+          {renderInlineMarkdown(text)}
+        </div>,
+      );
+      i += 1;
+      continue;
+    }
+
+    // Bullet list item: - or •
+    if (/^\s*[-•]\s/.test(line)) {
+      const listItems: React.ReactNode[] = [];
+      while (i < lines.length && /^\s*[-•]\s/.test(lines[i])) {
+        const itemText = lines[i].replace(/^\s*[-•]\s+/, '');
+        listItems.push(
+          <li key={listItems.length} className="flex items-start gap-2 py-0.5">
+            <span className="text-primary mt-1.5 text-[6px]">●</span>
+            <span>{renderInlineMarkdown(itemText)}</span>
+          </li>,
+        );
+        i += 1;
+      }
+      elements.push(
+        <ul key={elements.length} className="space-y-0.5 my-1">
+          {listItems}
+        </ul>,
+      );
+      continue;
+    }
+
+    // Numbered list item: 1. or 1)
+    if (/^\s*\d+[.)\s]\s/.test(line)) {
+      const listItems: React.ReactNode[] = [];
+      let num = 1;
+      while (i < lines.length && /^\s*\d+[.)\s]\s/.test(lines[i])) {
+        const itemText = lines[i].replace(/^\s*\d+[.)\s]\s*/, '');
+        listItems.push(
+          <li key={listItems.length} className="flex items-start gap-2 py-0.5">
+            <span className="text-primary/70 font-mono text-xs mt-0.5 min-w-[1.2em]">{num}.</span>
+            <span>{renderInlineMarkdown(itemText)}</span>
+          </li>,
+        );
+        num += 1;
+        i += 1;
+      }
+      elements.push(
+        <ol key={elements.length} className="space-y-0.5 my-1">
+          {listItems}
+        </ol>,
+      );
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(
+      <p key={elements.length} className="my-0.5">
+        {renderInlineMarkdown(line)}
+      </p>,
+    );
+    i += 1;
+  }
+
+  return <div className="text-sm leading-relaxed">{elements}</div>;
+};
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1269,12 +1406,10 @@ const TronAgent = () => {
                       <div className={`tron-bubble ${msg.role === 'tron' ? 'tron-bubble-agent' : 'tron-bubble-user'}`}>
                         {msg.isLoading ? (
                           <TypingDots />
+                        ) : msg.role === 'tron' ? (
+                          <TronMarkdown content={msg.content} />
                         ) : (
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {msg.content.split(/(\*\*[^*]+\*\*)/).map((part, i) =>
-                              /^\*\*[^*]+\*\*$/.test(part) ? <strong key={i}>{part.slice(2, -2)}</strong> : part,
-                            )}
-                          </p>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                         )}
                       </div>
                     )}
