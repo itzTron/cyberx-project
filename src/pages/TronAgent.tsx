@@ -437,16 +437,31 @@ const TronAgent = () => {
     activeThreadIdRef.current = activeThreadId;
   });
 
-  /* Persist thread list to database */
+  /* Persist thread list to localStorage + database */
   useEffect(() => {
     if (!user || !activeThreadId) return;
     const timer = window.setTimeout(() => {
       const latestThreads = chatThreadsRef.current;
       const latestActiveId = activeThreadIdRef.current;
       if (!latestActiveId) return;
+
+      // Always save to localStorage (reliable, works even if the DB table is missing)
+      try {
+        const storageKey = getChatHistoryStorageKey(user.id);
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ threads: latestThreads, activeThreadId: latestActiveId }),
+        );
+      } catch {
+        // localStorage full or unavailable — ignore
+      }
+
+      // Also attempt database save (best-effort)
       void saveTronChatState({
         threads: latestThreads as TronChatThreadState[],
         activeThreadId: latestActiveId,
+      }).catch(() => {
+        // DB save failed (e.g. table missing) — localStorage is the fallback
       });
     }, 320);
     return () => window.clearTimeout(timer);
@@ -516,6 +531,19 @@ const TronAgent = () => {
     activityContext?: Record<string, unknown>;
   }) => {
     if (!user || !nextActiveThreadId) return;
+
+    // Always save to localStorage first (reliable fallback)
+    try {
+      const storageKey = getChatHistoryStorageKey(user.id);
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ threads, activeThreadId: nextActiveThreadId }),
+      );
+    } catch {
+      // localStorage full or unavailable — ignore
+    }
+
+    // Attempt database save (best-effort)
     try {
       await saveTronChatState({
         threads: threads as TronChatThreadState[],
@@ -524,7 +552,7 @@ const TronAgent = () => {
         activityContext,
       });
     } catch (error) {
-      console.error('Unable to persist Tron chat state:', error);
+      console.error('Unable to persist Tron chat state to DB:', error);
     }
   };
 
