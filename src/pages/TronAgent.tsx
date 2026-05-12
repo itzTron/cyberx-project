@@ -997,6 +997,23 @@ const TronAgent = () => {
       // ignore storage errors
     }
 
+    // ── Fire-and-forget: send email notification to owner + auto-reply to user ──
+    const activeThread = chatThreads.find((t) => t.id === activeThreadId);
+    const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:3001';
+    fetch(`${serverUrl}/report/flag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reporterName: user.fullName || user.username || 'Tron User',
+        reporterEmail: user.email || '',
+        repoName: selectedRepo?.name || '',
+        threadTitle: activeThread?.title || 'Unnamed conversation',
+        messageContent: msg.content,
+      }),
+    }).catch((err) => {
+      console.warn('[TronAgent] Flag report email failed (non-critical):', err);
+    });
+
     toast({
       title: 'Reported',
       description: 'This response has been flagged for review.',

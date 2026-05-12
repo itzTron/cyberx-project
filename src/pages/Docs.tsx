@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Book, Rocket, Wrench, Shield, ChevronRight, Terminal, Database, Server, Key } from 'lucide-react';
+import { Book, Rocket, ChevronRight, Terminal, Server, Key } from 'lucide-react';
 
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
-import { tools } from '@/data/tools';
 
 const docSections = [
   {
@@ -24,14 +23,6 @@ const docSections = [
       { title: 'Database Setup', href: '#database' },
       { title: 'API Keys', href: '#api-keys' },
     ],
-  },
-  {
-    icon: Wrench,
-    title: 'Tools Overview',
-    items: tools.slice(0, 5).map(tool => ({
-      title: tool.name,
-      href: `/tools/${tool.slug}`,
-    })),
   },
 ];
 

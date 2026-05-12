@@ -6,6 +6,9 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
+const contactRoutes = require('./routes/contact');
+const reportRoutes = require('./routes/report');
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -45,6 +48,8 @@ app.use(globalLimiter);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/auth', authRoutes);
+app.use('/contact', contactRoutes);
+app.use('/report', reportRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {

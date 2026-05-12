@@ -31,16 +31,39 @@ const Contact = () => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Simulate form submission
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:3001';
+      const res = await fetch(`${serverUrl}/contact/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
 
-    toast({
-      title: 'Message Sent!',
-      description: 'Thank you for your message. We\'ll get back to you soon.',
-    });
+      const data = await res.json();
 
-    setFormData({ name: '', email: '', purpose: '', message: '' });
-    setIsSubmitting(false);
+      if (!res.ok) {
+        toast({
+          title: 'Failed to Send',
+          description: data?.error || 'Something went wrong. Please try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      toast({
+        title: '✦ Message Sent!',
+        description: 'Thank you! Watch your inbox — a confirmation is on its way.',
+      });
+      setFormData({ name: '', email: '', purpose: '', message: '' });
+    } catch {
+      toast({
+        title: 'Network Error',
+        description: 'Unable to reach the server. Make sure the backend is running.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
