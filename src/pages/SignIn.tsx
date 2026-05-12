@@ -70,15 +70,45 @@ const SignIn = () => {
       async (event, session) => {
         if (event === 'SIGNED_IN' && session) {
           extractAndStoreGitHubToken(session);
+
+          const userId = session.user.id;
           const meta = session.user.user_metadata;
-          const fullName = (meta?.full_name as string | undefined)?.trim() || (meta?.name as string | undefined)?.trim() || '';
           const emailVal = session.user.email || '';
-          const username =
-            (meta?.user_name as string | undefined)?.trim() ||
-            (meta?.preferred_username as string | undefined)?.trim() ||
-            fullName.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') ||
-            emailVal.split('@')[0] || 'dashboard';
-          navigate(`/${username}`);
+          const fullName =
+            (meta?.full_name as string | undefined)?.trim() ||
+            (meta?.name as string | undefined)?.trim() ||
+            '';
+
+          // ── Step 1: Look up the canonical username from user_profiles ──────
+          // This ensures we navigate to the existing account rather than a new
+          // profile derived from the GitHub handle (e.g., "bumblebee").
+          let resolvedUsername: string | null = null;
+          try {
+            const { data: profileData } = await supabase
+              .from('user_profiles')
+              .select('username')
+              .eq('id', userId)
+              .maybeSingle();
+            resolvedUsername = (profileData?.username as string | null) || null;
+          } catch {
+            // Non-fatal — fall through to metadata fallback
+          }
+
+          // ── Step 2: Fallback — derive username from metadata ──────────────
+          if (!resolvedUsername) {
+            const normalizeSlug = (s: string) =>
+              s.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+            resolvedUsername =
+              normalizeSlug(
+                (meta?.user_name as string | undefined)?.trim() ||
+                (meta?.preferred_username as string | undefined)?.trim() ||
+                fullName ||
+                emailVal.split('@')[0] ||
+                '',
+              ) || 'dashboard';
+          }
+
+          navigate(`/${resolvedUsername}`);
         }
       },
     );

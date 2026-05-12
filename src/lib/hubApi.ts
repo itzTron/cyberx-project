@@ -593,10 +593,13 @@ const ensureProfileRow = async ({
   userId,
   email,
   fullName,
+  preferredUsername,
 }: {
   userId: string;
   email: string;
   fullName: string;
+  /** Optional: pre-computed username (e.g. GitHub handle) to use when creating a new profile row. */
+  preferredUsername?: string;
 }): Promise<any> => {
   const supabase = getSupabaseClient();
   const [hasSocialColumns, hasLocationColumns] = await Promise.all([
@@ -619,11 +622,13 @@ const ensureProfileRow = async ({
 
   if (data) {
     if (!(data as any).username) {
-      const fallbackUsername = buildUsernameCandidate({
-        fullName,
-        email,
-        userId,
-      });
+      const fallbackUsername =
+        (preferredUsername ? normalizeUsername(preferredUsername) : '') ||
+        buildUsernameCandidate({
+          fullName,
+          email,
+          userId,
+        });
 
       const { data: updated, error: updateError } = await supabase
         .from('user_profiles')
@@ -642,11 +647,13 @@ const ensureProfileRow = async ({
     return data;
   }
 
-  const initialUsername = buildUsernameCandidate({
-    fullName,
-    email,
-    userId,
-  });
+  const initialUsername =
+    (preferredUsername ? normalizeUsername(preferredUsername) : '') ||
+    buildUsernameCandidate({
+      fullName,
+      email,
+      userId,
+    });
 
   const profileInsertDefaults = {
     id: userId,
@@ -1033,10 +1040,15 @@ export const getDashboardBootstrap = async (): Promise<DashboardBootstrap> => {
   const { supabase, user } = await ensureAuthenticatedUser();
   const repositorySelectColumns = await getRepositorySelectColumns(supabase);
   const fullName = (user.user_metadata.full_name as string | undefined)?.trim() || 'Cyberspace-X 2.0 Developer';
+  // For GitHub OAuth users, prefer the GitHub handle (user_name) as the username hint
+  // so new profiles are created with the GitHub handle, not derived from the display name.
+  const githubHandle = (user.user_metadata.user_name as string | undefined)?.trim() ||
+    (user.user_metadata.preferred_username as string | undefined)?.trim() || '';
   const profile = await ensureProfileRow({
     userId: user.id,
     email: user.email || '',
     fullName,
+    preferredUsername: githubHandle || undefined,
   });
   const resolvedUsername = (profile.username as string | null) || buildUsernameCandidate({
     fullName: profile.full_name || fullName,
