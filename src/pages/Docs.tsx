@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Rocket, Wrench, Shield, ChevronRight, Terminal, Database, Server, Key } from 'lucide-react';
@@ -34,7 +35,69 @@ const docSections = [
   },
 ];
 
+// All anchor IDs that exist in the page content
+const SECTION_IDS = ['requirements', 'installation', 'env-vars', 'database', 'api-keys'];
+
 const Docs = () => {
+  const [activeSection, setActiveSection] = useState<string>('');
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  useEffect(() => {
+    // Disconnect any existing observer
+    observerRef.current?.disconnect();
+
+    const handleIntersect: IntersectionObserverCallback = (entries) => {
+      // Pick the entry closest to the top of the viewport that is intersecting
+      const visible = entries
+        .filter((e) => e.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+      if (visible.length > 0) {
+        setActiveSection(visible[0].target.id);
+      }
+    };
+
+    observerRef.current = new IntersectionObserver(handleIntersect, {
+      root: null,
+      // Trigger when the top 30% of the viewport is hit
+      rootMargin: '-10% 0px -60% 0px',
+      threshold: 0,
+    });
+
+    SECTION_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observerRef.current!.observe(el);
+    });
+
+    return () => observerRef.current?.disconnect();
+  }, []);
+
+  // Smooth scroll handler for hash links
+  const handleAnchorClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!href.startsWith('#')) return;
+    e.preventDefault();
+    const id = href.slice(1);
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveSection(id);
+    }
+  };
+
+  const getLinkClass = (href: string) => {
+    if (!href.startsWith('#')) {
+      return 'text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1 pl-1';
+    }
+    const id = href.slice(1);
+    const isActive = activeSection === id;
+    return [
+      'text-sm flex items-center gap-1 transition-all duration-200 rounded-sm pl-1 py-0.5',
+      isActive
+        ? 'text-primary font-medium border-l-2 border-primary pl-2 ml-[-1px] drop-shadow-[0_0_6px_hsl(var(--primary)/0.8)]'
+        : 'text-muted-foreground hover:text-primary border-l-2 border-transparent pl-2 ml-[-1px]',
+    ].join(' ');
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero */}
@@ -64,6 +127,7 @@ const Docs = () => {
       <section className="py-16 relative z-10">
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+
             {/* Sidebar */}
             <div className="lg:col-span-1 hidden lg:block">
               <div className="sticky top-24 space-y-6">
@@ -73,19 +137,25 @@ const Docs = () => {
                       <section.icon className="w-5 h-5 text-primary" />
                       <h3 className="font-semibold text-foreground">{section.title}</h3>
                     </div>
-                    <ul className="space-y-2">
-                      {section.items.map((item) => (
-                        <li key={item.title}>
-                          <a
-                            href={item.href.startsWith('#') ? item.href : undefined}
-                            {...(item.href.startsWith('/') ? { href: item.href } : {})}
-                            className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
-                          >
-                            <ChevronRight className="w-3 h-3" />
-                            {item.title}
-                          </a>
-                        </li>
-                      ))}
+                    <ul className="space-y-1 border-l border-border pl-0 ml-1">
+                      {section.items.map((item) => {
+                        const isActive = item.href.startsWith('#') && activeSection === item.href.slice(1);
+                        return (
+                          <li key={item.title}>
+                            <a
+                              href={item.href.startsWith('/') ? item.href : item.href}
+                              onClick={(e) => handleAnchorClick(e, item.href)}
+                              className={getLinkClass(item.href)}
+                              style={isActive ? { textShadow: '0 0 8px hsl(var(--primary) / 0.9)' } : undefined}
+                            >
+                              <ChevronRight
+                                className={`w-3 h-3 shrink-0 transition-transform duration-200 ${isActive ? 'text-primary translate-x-0.5' : ''}`}
+                              />
+                              {item.title}
+                            </a>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </GlassCard>
                 ))}
@@ -94,7 +164,7 @@ const Docs = () => {
 
             {/* Main Content */}
             <div className="lg:col-span-3 space-y-12">
-              
+
               {/* Requirements */}
               <GlassCard id="requirements">
                 <h2 className="text-2xl font-bold text-foreground mb-4 flex items-center gap-3">
@@ -120,7 +190,7 @@ const Docs = () => {
                   <Book className="w-6 h-6 text-primary" />
                   Installation Guide
                 </h2>
-                
+
                 <div className="space-y-8">
                   {/* Step 1 */}
                   <div>
@@ -130,8 +200,7 @@ const Docs = () => {
                     </h3>
                     <p className="text-muted-foreground mb-3 text-sm">Download the code to your local machine.</p>
                     <pre className="bg-background/50 border border-border rounded-lg p-4 overflow-x-auto">
-                      <code className="text-sm font-mono text-primary">{`git clone https://github.com/itzTron/cyberx-project.git
-cd cyberx-project`}</code>
+                      <code className="text-sm font-mono text-primary">{`git clone https://github.com/itzTron/cyberx-project.git\ncd cyberx-project`}</code>
                     </pre>
                   </div>
 
@@ -146,7 +215,7 @@ cd cyberx-project`}</code>
                     </pre>
                   </div>
 
-                  {/* Step 3 */}
+                  {/* Step 3 — env-vars */}
                   <div id="env-vars">
                     <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
                       <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/20 text-primary text-sm">3</span>
@@ -154,11 +223,7 @@ cd cyberx-project`}</code>
                     </h3>
                     <p className="text-muted-foreground mb-3 text-sm">Copy the template environment file and add your keys.</p>
                     <pre className="bg-background/50 border border-border rounded-lg p-4 overflow-x-auto mb-4">
-                      <code className="text-sm font-mono text-muted-foreground"># Windows (PowerShell)
-Copy-Item .env.example .env
-
-# Mac/Linux
-cp .env.example .env</code>
+                      <code className="text-sm font-mono text-muted-foreground">{`# Windows (PowerShell)\nCopy-Item .env.example .env\n\n# Mac/Linux\ncp .env.example .env`}</code>
                     </pre>
                     <p className="text-muted-foreground mb-2 text-sm">Open <code>.env</code> and configure your Supabase, OpenRouter, and (optional) Maps/LocationIQ keys.</p>
                   </div>
@@ -171,14 +236,12 @@ cp .env.example .env</code>
                     </h3>
                     <p className="text-muted-foreground mb-3 text-sm">The OTP email authentication system runs as a separate Express server.</p>
                     <pre className="bg-background/50 border border-border rounded-lg p-4 overflow-x-auto mb-4">
-                      <code className="text-sm font-mono text-primary">{`cd server
-npm install
-cp .env.example .env  # Or Copy-Item on Windows`}</code>
+                      <code className="text-sm font-mono text-primary">{`cd server\nnpm install\ncp .env.example .env  # Or Copy-Item on Windows`}</code>
                     </pre>
                     <p className="text-muted-foreground mb-2 text-sm">Edit <code>server/.env</code> to include your <strong>Supabase Service Role Key</strong> (never expose this to the frontend) and Gmail SMTP credentials for OTP emails.</p>
                   </div>
 
-                  {/* Step 5 */}
+                  {/* Step 5 — database */}
                   <div id="database">
                     <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
                       <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/20 text-primary text-sm">5</span>
@@ -203,7 +266,6 @@ cp .env.example .env  # Or Copy-Item on Windows`}</code>
                       Start Both Servers
                     </h3>
                     <p className="text-muted-foreground mb-3 text-sm">Open two terminal windows to run the frontend and backend simultaneously.</p>
-                    
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="bg-background/50 border border-border rounded-lg p-4">
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Terminal 1: Frontend</h4>
@@ -211,13 +273,11 @@ cp .env.example .env  # Or Copy-Item on Windows`}</code>
                       </div>
                       <div className="bg-background/50 border border-border rounded-lg p-4">
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Terminal 2: Backend</h4>
-                        <pre className="overflow-x-auto"><code className="text-sm font-mono text-primary">cd server
-npm run dev</code></pre>
+                        <pre className="overflow-x-auto"><code className="text-sm font-mono text-primary">{`cd server\nnpm run dev`}</code></pre>
                       </div>
                     </div>
                     <p className="text-muted-foreground mt-4 text-sm">The app will be available at <strong>http://localhost:8080</strong></p>
                   </div>
-
                 </div>
               </GlassCard>
 
@@ -227,7 +287,7 @@ npm run dev</code></pre>
                   <Key className="w-6 h-6 text-primary" />
                   API Keys Guide
                 </h2>
-                
+
                 <div className="space-y-6">
                   <div>
                     <h3 className="text-lg font-semibold text-foreground mb-2">OpenRouter (Required for Tron AI Agent)</h3>
@@ -239,7 +299,7 @@ npm run dev</code></pre>
                       <li>The default model is free — no credits needed</li>
                     </ol>
                   </div>
-                  
+
                   <div>
                     <h3 className="text-lg font-semibold text-foreground mb-2">Gmail App Password (Required for OTP Auth)</h3>
                     <p className="text-sm text-muted-foreground mb-2">Required for the backend to send passwordless login codes.</p>
@@ -253,7 +313,7 @@ npm run dev</code></pre>
                   </div>
 
                   <div>
-                    <h3 className="text-lg font-semibold text-foreground mb-2">LocationIQ & Google Maps (Optional)</h3>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">LocationIQ &amp; Google Maps (Optional)</h3>
                     <p className="text-sm text-muted-foreground">
                       For the interactive profile location picker. Get a free key from <a href="https://locationiq.com/" target="_blank" rel="noreferrer" className="text-primary hover:underline">LocationIQ</a> (for geocoding) and Google Cloud Console (for the map visual). Add them as <code>VITE_LOCATIONIQ_API_KEY</code> and <code>VITE_GOOGLE_MAPS_API_KEY</code>.
                     </p>
