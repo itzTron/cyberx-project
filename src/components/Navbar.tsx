@@ -82,6 +82,20 @@ const Navbar = () => {
     [isUsernameRoute, location.pathname],
   );
 
+  // Returns true when the given dropdown item path matches the current page.
+  // Handles username routes (/:username) and query-param-based tabs (/repository?tab=...).
+  const isDropdownItemActive = useCallback(
+    (href: string) => {
+      const [hrefPath] = href.split('?');
+      // Username profile route
+      if (currentUser && hrefPath === `/${currentUser.username}`) {
+        return isUsernameRoute && location.pathname === hrefPath;
+      }
+      return location.pathname === hrefPath;
+    },
+    [currentUser, isUsernameRoute, location.pathname],
+  );
+
   const loadCurrentUser = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setCurrentUser(null);
@@ -218,8 +232,17 @@ const Navbar = () => {
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link to={`/${currentUser.username}`} className="cursor-pointer">
-                      <User className="mr-2 h-4 w-4" />
+                    <Link
+                      to={`/${currentUser.username}`}
+                      className={`cursor-pointer ${
+                        isDropdownItemActive(`/${currentUser.username}`)
+                          ? 'bg-primary/10 text-primary'
+                          : ''
+                      }`}
+                    >
+                      <User className={`mr-2 h-4 w-4 ${
+                        isDropdownItemActive(`/${currentUser.username}`) ? 'text-primary' : ''
+                      }`} />
                       Your Profile
                     </Link>
                   </DropdownMenuItem>
@@ -256,14 +279,28 @@ const Navbar = () => {
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                   <DropdownMenuItem asChild>
-                    <Link to="/profile" className="cursor-pointer">
-                      <User className="mr-2 h-4 w-4" />
+                    <Link
+                      to="/profile"
+                      className={`cursor-pointer ${
+                        isDropdownItemActive('/profile') ? 'bg-primary/10 text-primary' : ''
+                      }`}
+                    >
+                      <User className={`mr-2 h-4 w-4 ${
+                        isDropdownItemActive('/profile') ? 'text-primary' : ''
+                      }`} />
                       Profile Settings
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/activity" className="cursor-pointer">
-                      <Clock3 className="mr-2 h-4 w-4" />
+                    <Link
+                      to="/activity"
+                      className={`cursor-pointer ${
+                        isDropdownItemActive('/activity') ? 'bg-primary/10 text-primary' : ''
+                      }`}
+                    >
+                      <Clock3 className={`mr-2 h-4 w-4 ${
+                        isDropdownItemActive('/activity') ? 'text-primary' : ''
+                      }`} />
                       Latest Activity
                     </Link>
                   </DropdownMenuItem>
@@ -365,26 +402,50 @@ const Navbar = () => {
                     </p>
                   )}
                   <div className="grid grid-cols-1 gap-2">
-                    <Button asChild variant="outline">
-                      <Link to={`/${currentUser.username}`} onClick={() => setIsOpen(false)}>
-                        Your Profile
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline">
-                      <Link to="/repository?tab=overview" onClick={() => setIsOpen(false)}>
-                        Repository
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline">
-                      <Link to="/profile" onClick={() => setIsOpen(false)}>
-                        Profile Settings
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline">
-                      <Link to="/activity" onClick={() => setIsOpen(false)}>
-                        Latest Activity
-                      </Link>
-                    </Button>
+                    <Link
+                      to={`/${currentUser.username}`}
+                      onClick={() => setIsOpen(false)}
+                      className={`inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                        isDropdownItemActive(`/${currentUser.username}`)
+                          ? 'border-primary/50 bg-primary/10 text-primary'
+                          : 'border-border bg-transparent text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      Your Profile
+                    </Link>
+                    <Link
+                      to="/repository?tab=overview"
+                      onClick={() => setIsOpen(false)}
+                      className={`inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                        isDropdownItemActive('/repository')
+                          ? 'border-primary/50 bg-primary/10 text-primary'
+                          : 'border-border bg-transparent text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      Repository
+                    </Link>
+                    <Link
+                      to="/profile"
+                      onClick={() => setIsOpen(false)}
+                      className={`inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                        isDropdownItemActive('/profile')
+                          ? 'border-primary/50 bg-primary/10 text-primary'
+                          : 'border-border bg-transparent text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      Profile Settings
+                    </Link>
+                    <Link
+                      to="/activity"
+                      onClick={() => setIsOpen(false)}
+                      className={`inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                        isDropdownItemActive('/activity')
+                          ? 'border-primary/50 bg-primary/10 text-primary'
+                          : 'border-border bg-transparent text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      Latest Activity
+                    </Link>
                     <Button
                       type="button"
                       variant="outline"
