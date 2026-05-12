@@ -8,26 +8,47 @@ import MatrixRain from '@/components/MatrixRain';
 import Footer from '@/components/Footer';
 import SectionHeader from '@/components/SectionHeader';
 import GlassCard from '@/components/GlassCard';
+import { listPublicToolRepositories } from '@/lib/hubApi';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 const TYPEWRITER_TEXT = '2.0';
-const TYPING_SPEED = 200;    // ms per character
-const START_DELAY = 1200;     // ms before typing begins
+const TYPING_SPEED = 200;
+const START_DELAY = 1200;
 
-const stats = [
-  { value: '4', label: 'Security Tools', icon: Shield },
-  { value: '100%', label: 'Open Source', icon: Terminal },
-  { value: 'AES-256', label: 'Encryption', icon: Lock },
-  { value: 'Fast', label: 'Performance', icon: Zap },
-];
+// ── Animated counter ─────────────────────────────────────────────────────────
+const AnimatedCounter = ({ target }: { target: number }) => {
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    if (target === 0) return;
+    let start = 0;
+    const duration = 900; // ms
+    const step = 16; // ~60fps
+    const increment = target / (duration / step);
+    const timer = setInterval(() => {
+      start += increment;
+      if (start >= target) {
+        setDisplay(target);
+        clearInterval(timer);
+      } else {
+        setDisplay(Math.floor(start));
+      }
+    }, step);
+    return () => clearInterval(timer);
+  }, [target]);
+
+  return <>{display}</>;
+};
 
 const Index = () => {
   const [displayedText, setDisplayedText] = useState('');
   const [showCursor, setShowCursor] = useState(true);
   const [doneTyping, setDoneTyping] = useState(false);
+  const [repoCount, setRepoCount] = useState<number | null>(null);
 
+  // ── Typewriter ─────────────────────────────────────────────────────────────
   useEffect(() => {
     let charIndex = 0;
-
     const startTimeout = setTimeout(() => {
       const interval = setInterval(() => {
         charIndex++;
@@ -37,25 +58,42 @@ const Index = () => {
           setDoneTyping(true);
         }
       }, TYPING_SPEED);
-
       return () => clearInterval(interval);
     }, START_DELAY);
-
     return () => clearTimeout(startTimeout);
   }, []);
 
-  // Blink the cursor
+  // ── Cursor blink ───────────────────────────────────────────────────────────
   useEffect(() => {
     const blink = setInterval(() => setShowCursor((v) => !v), 530);
     return () => clearInterval(blink);
   }, []);
 
+  // ── Fetch live public repo count ───────────────────────────────────────────
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    listPublicToolRepositories()
+      .then((repos) => setRepoCount(repos.length))
+      .catch(() => setRepoCount(null));
+  }, []);
+
+  const stats = [
+    {
+      value: repoCount,
+      label: 'Repos',
+      icon: Shield,
+      href: '/tools',
+      isLive: true,
+    },
+    { value: null, label: 'Open Source', icon: Terminal, display: '100%' },
+    { value: null, label: 'Encryption', icon: Lock, display: 'AES-256' },
+    { value: null, label: 'Performance', icon: Zap, display: 'Fast' },
+  ] as const;
+
   return (
     <div className="min-h-screen bg-background relative">
       <MatrixRain />
       <div className="matrix-scanline fixed inset-0 pointer-events-none z-10" />
-
-
 
       <section className="relative min-h-screen flex items-center justify-center pt-24 md:pt-28">
         <div className="container mx-auto px-4 relative z-20">
@@ -100,19 +138,49 @@ const Index = () => {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {stats.map((stat, index) => (
-                <motion.div
-                  key={stat.label}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.4 + index * 0.1 }}
-                  className="glass-panel p-4 text-center"
-                >
-                  <stat.icon className="w-6 h-6 text-primary mx-auto mb-2" />
-                  <div className="text-2xl font-bold text-foreground font-mono">{stat.value}</div>
-                  <div className="text-sm text-muted-foreground">{stat.label}</div>
-                </motion.div>
-              ))}
+              {stats.map((stat, index) => {
+                const inner = (
+                  <motion.div
+                    key={stat.label}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.4 + index * 0.1 }}
+                    className={[
+                      'glass-panel p-4 text-center transition-all duration-200',
+                      'href' in stat
+                        ? 'cursor-pointer hover:border-primary/60 hover:bg-primary/5 hover:shadow-[0_0_18px_hsl(var(--primary)/0.25)]'
+                        : '',
+                    ].join(' ')}
+                  >
+                    <stat.icon className="w-6 h-6 text-primary mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-foreground font-mono">
+                      {'isLive' in stat && stat.isLive ? (
+                        repoCount === null ? (
+                          <span className="text-muted-foreground text-lg">—</span>
+                        ) : (
+                          <AnimatedCounter target={repoCount} />
+                        )
+                      ) : (
+                        stat.display
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground">{stat.label}</div>
+                    {'href' in stat && (
+                      <p className="text-[10px] text-primary/60 mt-1 font-mono tracking-wide">
+                        view all →
+                      </p>
+                    )}
+                  </motion.div>
+                );
+
+                return 'href' in stat ? (
+                  <Link key={stat.label} to={stat.href}>
+                    {inner}
+                  </Link>
+                ) : (
+                  inner
+                );
+              })}
             </div>
           </motion.div>
 
