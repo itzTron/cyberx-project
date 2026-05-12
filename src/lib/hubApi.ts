@@ -89,6 +89,41 @@ export type HubUserProfile = {
   avatarUrl: string;
 };
 
+export type PublicUserProfile = {
+  id: string;
+  username: string;
+  fullName: string;
+  bio: string;
+  avatarUrl: string;
+  githubUrl: string;
+  websiteUrl: string;
+  linkedinUrl: string;
+  locationLabel: string;
+  profileReadme: string;
+};
+
+export type HubNotification = {
+  id: string;
+  type: 'new_follower';
+  from_user_id: string | null;
+  message: string;
+  read: boolean;
+  created_at: string;
+  fromProfile?: { username: string; avatarUrl: string; fullName: string } | null;
+};
+
+export type HubFollowStatus = {
+  isFollowing: boolean;
+  followerCount: number;
+  followingCount: number;
+};
+
+export type PublicRepoWithOwner = HubRepository & {
+  ownerUsername: string;
+  ownerFullName: string;
+  ownerAvatarUrl: string;
+};
+
 export type DashboardBootstrap = {
   user: {
     id: string;
@@ -2659,4 +2694,129 @@ export const saveTronChatState = async ({
       context: activityContext || {},
     });
   }
+};
+
+/* ================================================================== */
+/*  Social API — Public Profiles, Follow, Notifications               */
+/* ================================================================== */
+
+export const getPublicUserProfile = async (username: string): Promise<PublicUserProfile | null> => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, username, full_name, bio, avatar_url, github_url, website_url, linkedin_url, location_label, profile_readme' as any)
+    .eq('username', username)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const r = data as any;
+  return {
+    id: r.id, username: r.username || '', fullName: r.full_name || '', bio: r.bio || '',
+    avatarUrl: r.avatar_url || '', githubUrl: r.github_url || '', websiteUrl: r.website_url || '',
+    linkedinUrl: r.linkedin_url || '', locationLabel: r.location_label || '', profileReadme: r.profile_readme || '',
+  };
+};
+
+export const getPublicUserRepositories = async (userId: string): Promise<HubRepository[]> => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('repositories')
+    .select(REPOSITORY_SELECT_COLUMNS_BASE as any)
+    .eq('owner_id', userId).eq('visibility', 'public').is('archived_at', null)
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return mapRepositoryList(data);
+};
+
+export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepoWithOwner[]> => {
+  const supabase = getSupabaseClient();
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase, true);
+  if (!hasToolListColumn) return [];
+  const repoCols = await getRepositorySelectColumns(supabase);
+  const { data, error } = await supabase
+    .from('repositories')
+    .select(`${repoCols}, user_profiles!owner_id(username, full_name, avatar_url)` as any)
+    .eq('visibility', 'public').eq('show_in_tool_list', true).is('archived_at', null)
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data as any[]) || []).map((record) => ({
+    ...mapRepositoryRecord(record),
+    ownerUsername: record.user_profiles?.username || '',
+    ownerFullName: record.user_profiles?.full_name || '',
+    ownerAvatarUrl: record.user_profiles?.avatar_url || '',
+  }));
+};
+
+export const followUser = async (targetUserId: string): Promise<void> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { error } = await supabase.from('follows').insert({ follower_id: user.id, following_id: targetUserId });
+  if (error && error.code !== '23505') throw new Error(error.message);
+};
+
+export const unfollowUser = async (targetUserId: string): Promise<void> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { error } = await supabase.from('follows').delete()
+    .eq('follower_id', user.id).eq('following_id', targetUserId);
+  if (error) throw new Error(error.message);
+};
+
+export const getFollowStatus = async (targetUserId: string): Promise<HubFollowStatus> => {
+  const supabase = getSupabaseClient();
+  const [followerRes, followingRes] = await Promise.all([
+    supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', targetUserId),
+    supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', targetUserId),
+  ]);
+  let isFollowing = false;
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user) {
+      const { data } = await supabase.from('follows').select('id')
+        .eq('follower_id', authData.user.id).eq('following_id', targetUserId).maybeSingle();
+      isFollowing = Boolean(data);
+    }
+  } catch { /* unauthenticated */ }
+  return { isFollowing, followerCount: followerRes.count ?? 0, followingCount: followingRes.count ?? 0 };
+};
+
+export const getNotifications = async (): Promise<HubNotification[]> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, type, from_user_id, message, read, created_at')
+    .eq('user_id', user.id).order('created_at', { ascending: false }).limit(30);
+  if (error) throw new Error(error.message);
+  const rows = (data as any[]) || [];
+  const fromIds = [...new Set(rows.map((r) => r.from_user_id).filter(Boolean))];
+  const profileMap: Record<string, { username: string; avatarUrl: string; fullName: string }> = {};
+  if (fromIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('user_profiles').select('id, username, full_name, avatar_url').in('id', fromIds);
+    for (const p of (profiles as any[]) || []) {
+      profileMap[p.id] = { username: p.username || '', avatarUrl: p.avatar_url || '', fullName: p.full_name || '' };
+    }
+  }
+  return rows.map((r) => ({
+    id: r.id, type: r.type, from_user_id: r.from_user_id,
+    message: r.message, read: r.read, created_at: r.created_at,
+    fromProfile: r.from_user_id ? (profileMap[r.from_user_id] ?? null) : null,
+  })) as HubNotification[];
+};
+
+export const getUnreadNotificationCount = async (): Promise<number> => {
+  const supabase = getSupabaseClient();
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData?.user) return 0;
+  const { count } = await supabase.from('notifications').select('id', { count: 'exact', head: true })
+    .eq('user_id', authData.user.id).eq('read', false);
+  return count ?? 0;
+};
+
+export const markAllNotificationsRead = async (): Promise<void> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false);
+};
+
+export const markNotificationRead = async (notificationId: string): Promise<void> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  await supabase.from('notifications').update({ read: true }).eq('id', notificationId).eq('user_id', user.id);
 };

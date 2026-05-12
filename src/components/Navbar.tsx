@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { getCurrentUserProfile, signOutDashboardUser, type HubUserProfile } from '@/lib/hubApi';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import NotificationBell from '@/components/NotificationBell';
 
 const navLinks: { href: string; label: string; icon?: React.ReactNode }[] = [
   { href: '/', label: 'Home' },
@@ -197,7 +198,9 @@ const Navbar = () => {
             {!isAuthReady ? (
               <div className="h-9 w-24" />
             ) : currentUser ? (
-              <DropdownMenu>
+              <>
+                <NotificationBell />
+                <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
