@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Check, Eye, EyeOff, Github, LoaderCircle,
+  AlertTriangle, Check, Eye, EyeOff, Github, LoaderCircle,
   LockKeyhole, Mail, ShieldCheck, KeyRound, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -62,6 +62,52 @@ const SignIn = () => {
     const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [resendCooldown]);
+
+  // ── Parse OAuth error params from URL on mount ────────────────────────────
+  // Supabase returns errors like "Multiple accounts" in the query string and
+  // hash fragment after the OAuth redirect. We extract them here and display
+  // a friendly message, then clean the URL so it doesn't persist.
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    // Also check the hash fragment — Supabase sometimes doubles the params there
+    const hashParams = new URLSearchParams(
+      window.location.hash.replace(/^#/, ''),
+    );
+
+    const errorCode =
+      searchParams.get('error_code') || hashParams.get('error_code') || '';
+    const rawDescription =
+      searchParams.get('error_description') ||
+      hashParams.get('error_description') ||
+      searchParams.get('error') ||
+      hashParams.get('error') ||
+      '';
+
+    if (!rawDescription && !errorCode) return;
+
+    // Decode double-encoded URI components that Supabase sometimes sends
+    let description = rawDescription;
+    try { description = decodeURIComponent(rawDescription); } catch { /* ignore */ }
+
+    let friendlyMessage: string;
+    if (
+      description.toLowerCase().includes('multiple accounts') ||
+      description.toLowerCase().includes('linking domain')
+    ) {
+      friendlyMessage =
+        'Your GitHub email is already registered with a password or OTP account. ' +
+        'Please sign in using your password or email OTP below instead.';
+    } else if (description.toLowerCase().includes('access_denied')) {
+      friendlyMessage = 'GitHub sign-in was cancelled. Please try again.';
+    } else {
+      friendlyMessage = description || 'GitHub sign-in failed. Please try a different method.';
+    }
+
+    setFormError(friendlyMessage);
+
+    // Strip the error params from the URL so they don\'t persist on refresh
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, []);
 
   // ── OAuth callback (GitHub) ────────────────────────────────────────────────
   useEffect(() => {
@@ -288,6 +334,14 @@ const SignIn = () => {
                 <p className="text-sm text-muted-foreground mt-1">Choose how you'd like to sign in.</p>
               </div>
 
+              {/* OAuth / global error banner */}
+              {formError && (
+                <div className="mb-5 flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               {/* GitHub */}
               <Button
                 id="github-signin-button"
@@ -401,7 +455,6 @@ const SignIn = () => {
                     {fieldErrors.password && <p className="mt-2 text-sm text-destructive">{fieldErrors.password}</p>}
                   </div>
 
-                  {formError && <p className="text-sm text-destructive">{formError}</p>}
                   {submitSuccess && <p className="text-sm text-primary">{submitSuccess}</p>}
 
                   <Button type="submit" size="lg" className="w-full neon-border" disabled={isSubmitting}>
