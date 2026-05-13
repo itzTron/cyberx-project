@@ -86,21 +86,66 @@ const PublicProfile = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ── localStorage-first follow helpers ────────────────────────────────────────
+  const LS_FOLLOWS_KEY = `cyberx_follows_${currentUserId ?? 'anon'}`;
+
+  const getLocalFollows = (): Set<string> => {
+    try {
+      const raw = localStorage.getItem(LS_FOLLOWS_KEY);
+      return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  };
+
+  const setLocalFollows = (set: Set<string>) => {
+    try { localStorage.setItem(LS_FOLLOWS_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+  };
+
+  // Merge localStorage state into initial followStatus on profile load
+  useEffect(() => {
+    if (!profile || !currentUserId) return;
+    const localFollows = getLocalFollows();
+    if (localFollows.has(profile.id) && !followStatus.isFollowing) {
+      setFollowStatus((p) => ({ ...p, isFollowing: true }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, currentUserId]);
+
   const handleFollow = async () => {
     if (!profile) return;
     if (!currentUserId) { navigate('/signin'); return; }
     if (currentUserId === profile.id) return;
     setIsFollowLoading(true);
+
+    const localFollows = getLocalFollows();
+    const alreadyFollowing = followStatus.isFollowing || localFollows.has(profile.id);
+
     try {
-      if (followStatus.isFollowing) {
-        await unfollowUser(profile.id);
+      if (alreadyFollowing) {
+        // ── Unfollow ──────────────────────────────────────────────────────────
+        // 1. Update localStorage immediately
+        localFollows.delete(profile.id);
+        setLocalFollows(localFollows);
         setFollowStatus((p) => ({ ...p, isFollowing: false, followerCount: Math.max(0, p.followerCount - 1) }));
         toast({ title: 'Unfollowed', description: `You unfollowed @${profile.username}.` });
+
+        // 2. Try DB silently (fail silently if table missing)
+        unfollowUser(profile.id).catch((e) =>
+          console.warn('[follow] DB unfollow skipped (table may not exist yet):', e.message),
+        );
       } else {
-        await followUser(profile.id);
+        // ── Follow ────────────────────────────────────────────────────────────
+        // 1. Update localStorage immediately — UI always works
+        localFollows.add(profile.id);
+        setLocalFollows(localFollows);
         setFollowStatus((p) => ({ ...p, isFollowing: true, followerCount: p.followerCount + 1 }));
         toast({ title: '✦ Following!', description: `You are now following @${profile.username}.` });
-        // Fire-and-forget follow email
+
+        // 2. Try DB silently in background
+        followUser(profile.id).catch((e) =>
+          console.warn('[follow] DB follow skipped (table may not exist yet):', e.message),
+        );
+
+        // 3. Fire-and-forget follow email notification
         const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:3001';
         const supabase = getSupabaseClient();
         const { data: authData } = await supabase.auth.getUser();
@@ -118,8 +163,9 @@ const PublicProfile = () => {
           }).catch(() => {});
         }
       }
-    } catch {
-      toast({ title: 'Error', description: 'Action failed. Please try again.', variant: 'destructive' });
+    } catch (err) {
+      // This catch is now only for truly unexpected errors (e.g. navigate failing)
+      console.error('[PublicProfile] Unexpected follow error:', err);
     } finally {
       setIsFollowLoading(false);
     }

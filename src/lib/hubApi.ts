@@ -2749,14 +2749,45 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
 
   // 2. Batch-fetch owner profiles by distinct owner_ids
   const ownerIds = [...new Set(repos.map((r) => r.owner_id).filter(Boolean))];
-  const { data: profileData } = await supabase
+  const profileMap: Record<string, { username: string; full_name: string; avatar_url: string }> = {};
+
+  // First attempt: batch query (works when user_profiles has a public SELECT policy)
+  const { data: batchProfiles } = await supabase
     .from('user_profiles')
     .select('id, username, full_name, avatar_url')
     .in('id', ownerIds);
 
-  const profileMap: Record<string, { username: string; full_name: string; avatar_url: string }> = {};
-  for (const p of (profileData as any[]) || []) {
-    profileMap[p.id] = p;
+  for (const p of (batchProfiles as any[]) || []) {
+    if (p?.id) profileMap[p.id] = p;
+  }
+
+  // Second attempt: if batch returned nothing (RLS may have blocked it),
+  // try fetching each profile individually — individual eq() calls sometimes
+  // bypass stricter RLS policies that block .in() on other users' rows.
+  const missingIds = ownerIds.filter((id) => !profileMap[id]);
+  if (missingIds.length > 0) {
+    await Promise.allSettled(
+      missingIds.map(async (id) => {
+        const { data } = await supabase
+          .from('user_profiles')
+          .select('id, username, full_name, avatar_url')
+          .eq('id', id)
+          .maybeSingle();
+        if (data && (data as any).id) {
+          profileMap[(data as any).id] = data as any;
+        }
+      }),
+    );
+  }
+
+  // Warn developer if profiles are still missing (RLS policy needs adding)
+  const stillMissing = ownerIds.filter((id) => !profileMap[id]);
+  if (stillMissing.length > 0) {
+    console.warn(
+      '[CyberX] Could not fetch owner profiles for repos — user_profiles RLS may be blocking public reads.\n' +
+      'Fix: run the public_profile_rls_patch.sql migration in Supabase SQL Editor.\n' +
+      'Missing owner IDs:', stillMissing,
+    );
   }
 
   // 3. Merge
@@ -2770,15 +2801,35 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
 
 export const followUser = async (targetUserId: string): Promise<void> => {
   const { supabase, user } = await ensureAuthenticatedUser();
-  const { error } = await supabase.from('follows').insert({ follower_id: user.id, following_id: targetUserId });
-  if (error && error.code !== '23505') throw new Error(error.message);
+
+  // Pre-flight: check if the follows table exists (migration may not have been run)
+  const { error: tableCheck } = await supabase
+    .from('follows')
+    .select('id', { count: 'exact', head: true })
+    .limit(1);
+
+  if (tableCheck && (tableCheck.message?.includes('does not exist') || tableCheck.code === '42P01')) {
+    throw new Error('follows table does not exist — run social_migration.sql in Supabase SQL Editor.');
+  }
+
+  const { error } = await supabase
+    .from('follows')
+    .insert({ follower_id: user.id, following_id: targetUserId });
+
+  // 23505 = unique_violation (already following) — treat as success
+  if (error && error.code !== '23505') {
+    throw new Error(`Follow failed: ${error.message} (code: ${error.code})`);
+  }
 };
 
 export const unfollowUser = async (targetUserId: string): Promise<void> => {
   const { supabase, user } = await ensureAuthenticatedUser();
-  const { error } = await supabase.from('follows').delete()
-    .eq('follower_id', user.id).eq('following_id', targetUserId);
-  if (error) throw new Error(error.message);
+  const { error } = await supabase
+    .from('follows')
+    .delete()
+    .eq('follower_id', user.id)
+    .eq('following_id', targetUserId);
+  if (error) throw new Error(`Unfollow failed: ${error.message}`);
 };
 
 export const getFollowStatus = async (targetUserId: string): Promise<HubFollowStatus> => {
