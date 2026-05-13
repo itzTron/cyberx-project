@@ -340,6 +340,7 @@ const Navbar = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            </>
             ) : (
               <>
                 <Button asChild variant="outline">

@@ -2732,18 +2732,39 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
   const supabase = getSupabaseClient();
   const hasToolListColumn = await hasRepositoryToolListColumn(supabase, true);
   if (!hasToolListColumn) return [];
+
+  // 1. Fetch public repos
   const repoCols = await getRepositorySelectColumns(supabase);
-  const { data, error } = await supabase
+  const { data: repoData, error: repoError } = await supabase
     .from('repositories')
-    .select(`${repoCols}, user_profiles!owner_id(username, full_name, avatar_url)` as any)
-    .eq('visibility', 'public').eq('show_in_tool_list', true).is('archived_at', null)
+    .select(repoCols as any)
+    .eq('visibility', 'public')
+    .eq('show_in_tool_list', true)
+    .is('archived_at', null)
     .order('updated_at', { ascending: false });
-  if (error) throw new Error(error.message);
-  return ((data as any[]) || []).map((record) => ({
-    ...mapRepositoryRecord(record),
-    ownerUsername: record.user_profiles?.username || '',
-    ownerFullName: record.user_profiles?.full_name || '',
-    ownerAvatarUrl: record.user_profiles?.avatar_url || '',
+
+  if (repoError) throw new Error(repoError.message);
+  const repos = mapRepositoryList(repoData);
+  if (repos.length === 0) return [];
+
+  // 2. Batch-fetch owner profiles by distinct owner_ids
+  const ownerIds = [...new Set(repos.map((r) => r.owner_id).filter(Boolean))];
+  const { data: profileData } = await supabase
+    .from('user_profiles')
+    .select('id, username, full_name, avatar_url')
+    .in('id', ownerIds);
+
+  const profileMap: Record<string, { username: string; full_name: string; avatar_url: string }> = {};
+  for (const p of (profileData as any[]) || []) {
+    profileMap[p.id] = p;
+  }
+
+  // 3. Merge
+  return repos.map((repo) => ({
+    ...repo,
+    ownerUsername: profileMap[repo.owner_id]?.username || '',
+    ownerFullName: profileMap[repo.owner_id]?.full_name || '',
+    ownerAvatarUrl: profileMap[repo.owner_id]?.avatar_url || '',
   }));
 };
 

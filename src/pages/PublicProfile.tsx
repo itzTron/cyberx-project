@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Github, Globe, Linkedin, MapPin, FolderGit2, UserPlus, UserCheck } from 'lucide-react';
+import { Check, Code2, Copy, Eye, FolderGit2, Github, Globe, Linkedin, MapPin, UserCheck, UserPlus } from 'lucide-react';
+import GitHubReadme from '@/components/GitHubReadme';
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -34,6 +35,9 @@ const PublicProfile = () => {
   const [isFollowLoading, setIsFollowLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  // 'preview' | 'code'
+  const [readmeView, setReadmeView] = useState<'preview' | 'code'>('preview');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -66,6 +70,21 @@ const PublicProfile = () => {
     void load();
     return () => { cancelled = true; };
   }, [username, navigate]);
+
+  const handleCopyReadme = async () => {
+    if (!profile?.profileReadme) return;
+    try {
+      await navigator.clipboard.writeText(profile.profileReadme);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = profile.profileReadme;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleFollow = async () => {
     if (!profile) return;
@@ -188,8 +207,66 @@ const PublicProfile = () => {
               </TabsList>
               <TabsContent value="overview">
                 {profile.profileReadme ? (
-                  <GlassCard><h2 className="text-lg font-semibold text-foreground mb-4">Profile README</h2>
-                    <div className="prose prose-invert max-w-none text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">{profile.profileReadme}</div>
+                  <GlassCard className="overflow-hidden !p-0">
+                    {/* Header bar — GitHub style */}
+                    <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-border bg-muted/30">
+                      <span className="text-xs font-mono text-muted-foreground">
+                        {profile.username}/README.md
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {/* Preview / Code toggle */}
+                        <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setReadmeView('preview')}
+                            className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${
+                              readmeView === 'preview'
+                                ? 'bg-primary/15 text-primary'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                            }`}
+                          >
+                            <Eye className="w-3 h-3" />
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReadmeView('code')}
+                            className={`flex items-center gap-1 px-3 py-1.5 border-l border-border transition-colors ${
+                              readmeView === 'code'
+                                ? 'bg-primary/15 text-primary'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                            }`}
+                          >
+                            <Code2 className="w-3 h-3" />
+                            Code
+                          </button>
+                        </div>
+                        {/* Copy button */}
+                        <button
+                          type="button"
+                          onClick={() => void handleCopyReadme()}
+                          title="Copy raw markdown"
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-md border border-border text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                        >
+                          {copied
+                            ? <><Check className="w-3 h-3 text-green-400" />Copied!</>
+                            : <><Copy className="w-3 h-3" />Copy raw</>}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-5">
+                      {readmeView === 'preview' ? (
+                        <div className="p-4">
+                          <GitHubReadme content={profile.profileReadme} />
+                        </div>
+                      ) : (
+                        <pre className="overflow-x-auto rounded-lg bg-muted/40 border border-border p-4 text-xs font-mono text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
+                          <code>{profile.profileReadme}</code>
+                        </pre>
+                      )}
+                    </div>
                   </GlassCard>
                 ) : (
                   <GlassCard className="text-center py-12"><p className="text-muted-foreground text-sm">This user hasn't written a profile README yet.</p></GlassCard>

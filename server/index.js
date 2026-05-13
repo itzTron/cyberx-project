@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const contactRoutes = require('./routes/contact');
 const reportRoutes = require('./routes/report');
+const followRoutes = require('./routes/follow');
 
 
 const app = express();
@@ -50,6 +51,7 @@ app.use(globalLimiter);
 app.use('/auth', authRoutes);
 app.use('/contact', contactRoutes);
 app.use('/report', reportRoutes);
+app.use('/follow', followRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
