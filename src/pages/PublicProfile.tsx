@@ -123,49 +123,48 @@ const PublicProfile = () => {
       if (alreadyFollowing) {
         // ── Unfollow ──────────────────────────────────────────────────────────
         // 1. Update localStorage immediately
+        await unfollowUser(profile.id);
         localFollows.delete(profile.id);
         setLocalFollows(localFollows);
         setFollowStatus((p) => ({ ...p, isFollowing: false, followerCount: Math.max(0, p.followerCount - 1) }));
         toast({ title: 'Unfollowed', description: `You unfollowed @${profile.username}.` });
 
-        // 2. Try DB silently (fail silently if table missing)
-        unfollowUser(profile.id).catch((e) =>
-          console.warn('[follow] DB unfollow skipped (table may not exist yet):', e.message),
-        );
       } else {
         // ── Follow ────────────────────────────────────────────────────────────
         // 1. Update localStorage immediately — UI always works
+        await followUser(profile.id);
         localFollows.add(profile.id);
         setLocalFollows(localFollows);
         setFollowStatus((p) => ({ ...p, isFollowing: true, followerCount: p.followerCount + 1 }));
         toast({ title: '✦ Following!', description: `You are now following @${profile.username}.` });
 
-        // 2. Try DB silently in background
-        followUser(profile.id).catch((e) =>
-          console.warn('[follow] DB follow skipped (table may not exist yet):', e.message),
-        );
-
         // 3. Fire-and-forget follow email notification
         const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:3001';
-        const supabase = getSupabaseClient();
-        const { data: authData } = await supabase.auth.getUser();
-        const { data: myProfile } = await supabase
-          .from('user_profiles').select('username, full_name').eq('id', authData?.user?.id ?? '').maybeSingle();
-        if (myProfile) {
-          fetch(`${serverUrl}/follow/notify`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              followerName: (myProfile as any).full_name || (myProfile as any).username || 'Someone',
-              followerUsername: (myProfile as any).username || '',
-              targetName: profile.fullName || profile.username,
-              targetEmail: profile.id,
-            }),
-          }).catch(() => {});
-        }
+        void fetch(`${serverUrl}/follow/notify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            followerUserId: currentUserId,
+            targetUserId: profile.id,
+          }),
+        })
+          .then(async (response) => {
+            if (response.ok) return;
+            const payload = await response.json().catch(() => null);
+            console.warn('[follow] Follow notification delivery failed:', payload?.error || response.statusText);
+          })
+          .catch((error) => {
+            console.warn('[follow] Follow notification request failed:', error);
+          });
       }
     } catch (err) {
-      // This catch is now only for truly unexpected errors (e.g. navigate failing)
-      console.error('[PublicProfile] Unexpected follow error:', err);
+      const message = err instanceof Error ? err.message : 'Unable to update the follow state right now.';
+      console.error('[PublicProfile] Follow error:', err);
+      toast({
+        title: alreadyFollowing ? 'Unfollow failed' : 'Follow failed',
+        description: message,
+        variant: 'destructive',
+      });
     } finally {
       setIsFollowLoading(false);
     }

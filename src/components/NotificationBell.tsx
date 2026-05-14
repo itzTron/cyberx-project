@@ -24,6 +24,16 @@ const timeAgo = (iso: string) => {
 const getInitials = (name: string) =>
   name.split(' ').map((p) => p.trim()[0] || '').join('').slice(0, 2).toUpperCase() || '?';
 
+const getNotificationMessage = (notification: HubNotification) => {
+  const username = notification.fromProfile?.username;
+  if (!username) return notification.message;
+
+  const prefixedMessage = `@${username} `;
+  return notification.message.startsWith(prefixedMessage)
+    ? notification.message.slice(prefixedMessage.length)
+    : notification.message;
+};
+
 const NotificationBell = () => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
@@ -156,7 +166,7 @@ const NotificationBell = () => {
                         {n.fromProfile ? (
                           <><span className="font-semibold text-primary">@{n.fromProfile.username}</span>{' '}</>
                         ) : null}
-                        {n.message.replace(/^.+? /, '')}
+                        {getNotificationMessage(n)}
                       </p>
                       <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(n.created_at)}</p>
                     </div>

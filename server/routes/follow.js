@@ -3,9 +3,20 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
+const { createClient } = require('@supabase/supabase-js');
 
 const router = express.Router();
-const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
+
+const {
+  SMTP_HOST,
+  SMTP_PORT,
+  SMTP_SECURE,
+  SMTP_USER,
+  SMTP_PASS,
+  SMTP_FROM,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY,
+} = process.env;
 
 const followLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -23,6 +34,23 @@ const createTransporter = () =>
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   });
 
+const getAdminClient = () => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured.');
+  }
+
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+};
+
+const isValidEmail = (value) =>
+  typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+const isValidUuid = (value) =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+
 const buildFollowEmailHtml = (followerName, followerUsername, targetName) => `
 <!DOCTYPE html>
 <html lang="en">
@@ -34,7 +62,7 @@ const buildFollowEmailHtml = (followerName, followerUsername, targetName) => `
         <tr>
           <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:28px 32px;text-align:center;">
             <p style="margin:0;font-size:11px;letter-spacing:3px;color:#e0e0ff;text-transform:uppercase;font-weight:600;">Cyberspace-X 2.0</p>
-            <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">New Follower ✦</h1>
+            <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">New Follower</h1>
           </td>
         </tr>
         <tr>
@@ -50,7 +78,7 @@ const buildFollowEmailHtml = (followerName, followerUsername, targetName) => `
         </tr>
         <tr>
           <td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
-            <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+            <p style="margin:0;color:#4b5563;font-size:11px;">&copy; ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
           </td>
         </tr>
       </table>
@@ -60,27 +88,55 @@ const buildFollowEmailHtml = (followerName, followerUsername, targetName) => `
 </html>
 `;
 
-// POST /follow/notify — called after a follow insert on the client
 router.post('/notify', followLimiter, async (req, res) => {
   try {
-    const followerName     = (req.body?.followerName     || 'Someone').toString().trim();
-    const followerUsername = (req.body?.followerUsername || 'user').toString().trim();
-    const targetName       = (req.body?.targetName       || 'there').toString().trim();
-    const targetEmail      = (req.body?.targetEmail      || '').toString().trim().toLowerCase();
+    const followerUserId = (req.body?.followerUserId || '').toString().trim();
+    const targetUserId = (req.body?.targetUserId || '').toString().trim();
 
-    if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
-      return res.status(400).json({ error: 'Valid target email is required.' });
+    if (!isValidUuid(followerUserId) || !isValidUuid(targetUserId)) {
+      return res.status(400).json({ error: 'Valid follower and target user ids are required.' });
+    }
+    if (followerUserId === targetUserId) {
+      return res.status(400).json({ error: 'Users cannot follow themselves.' });
     }
     if (!SMTP_USER || !SMTP_PASS) {
       return res.status(500).json({ error: 'Email service not configured.' });
     }
 
+    const admin = getAdminClient();
+    const [{ data: followerProfile, error: followerError }, { data: targetProfile, error: targetError }] = await Promise.all([
+      admin.from('user_profiles').select('id, username, full_name').eq('id', followerUserId).maybeSingle(),
+      admin.from('user_profiles').select('id, email, username, full_name').eq('id', targetUserId).maybeSingle(),
+    ]);
+
+    if (followerError) {
+      throw new Error(`Failed to load follower profile: ${followerError.message}`);
+    }
+    if (targetError) {
+      throw new Error(`Failed to load target profile: ${targetError.message}`);
+    }
+    if (!followerProfile) {
+      return res.status(404).json({ error: 'Follower profile was not found.' });
+    }
+    if (!targetProfile) {
+      return res.status(404).json({ error: 'Target user profile was not found.' });
+    }
+
+    const targetEmail = (targetProfile.email || '').trim().toLowerCase();
+    if (!isValidEmail(targetEmail)) {
+      return res.status(400).json({ error: 'Target user does not have a valid email address.' });
+    }
+
+    const followerUsername = (followerProfile.username || 'user').trim();
+    const followerName = (followerProfile.full_name || followerUsername || 'Someone').trim();
+    const targetName = (targetProfile.full_name || targetProfile.username || 'there').trim();
+
     const transporter = createTransporter();
     await transporter.sendMail({
       from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
       to: targetEmail,
-      subject: `@${followerUsername} started following you — Cyberspace-X`,
-      text: `Hi ${targetName},\n\n${followerName} (@${followerUsername}) just started following you on Cyberspace-X.\n\nVisit their profile to follow back!\n\n— Cyberspace-X`,
+      subject: `@${followerUsername} started following you - Cyberspace-X`,
+      text: `Hi ${targetName},\n\n${followerName} (@${followerUsername}) just started following you on Cyberspace-X.\n\nVisit their profile to follow back!\n\n- Cyberspace-X`,
       html: buildFollowEmailHtml(followerName, followerUsername, targetName),
     });
 
