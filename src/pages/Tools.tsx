@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Download, FolderGit2, User } from 'lucide-react';
 import Footer from '@/components/Footer';
+import ForkRepositoryButton from '@/components/ForkRepositoryButton';
 import SectionHeader from '@/components/SectionHeader';
 import GlassCard from '@/components/GlassCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -123,13 +124,19 @@ const Tools = () => {
 
                     <p className="text-xs text-muted-foreground mt-2">Updated: {formatDate(repo.updated_at)}</p>
 
-                    <div className="mt-4">
+                    <div className="mt-4 flex flex-wrap gap-2">
                       <button type="button" onClick={() => void handleDownloadPublicRepositoryZip(repo)}
                         disabled={downloadingRepoId === repo.id}
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border text-sm text-foreground hover:border-primary/50 hover:bg-muted/40 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
                         <Download className="w-4 h-4" />
                         {downloadingRepoId === repo.id ? 'Preparing ZIP...' : 'Download ZIP'}
                       </button>
+                      <ForkRepositoryButton
+                        repoId={repo.id}
+                        repoName={repo.name}
+                        ownerId={repo.owner_id}
+                        ownerUsername={repo.ownerUsername || 'user'}
+                      />
                     </div>
                   </GlassCard>
                 </motion.div>

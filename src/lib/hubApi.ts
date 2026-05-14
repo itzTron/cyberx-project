@@ -104,7 +104,7 @@ export type PublicUserProfile = {
 
 export type HubNotification = {
   id: string;
-  type: 'new_follower';
+  type: 'new_follower' | 'repo_forked';
   from_user_id: string | null;
   message: string;
   read: boolean;
@@ -159,6 +159,19 @@ export type UploadRepositoryFilesInput = {
   commitMessage: string;
 };
 
+export type ForkBranchMode = 'main' | 'new_branch';
+
+export type ForkRepositoryInput = {
+  sourceRepoId: string;
+  branchMode: ForkBranchMode;
+  branchName?: string;
+};
+
+export type ForkRepositoryResult = {
+  repository: HubRepository;
+  createdBranchName: string | null;
+};
+
 const MAX_FILES_PER_UPLOAD = 30;
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_GITHUB_IMPORT_FILES = 2000;
@@ -206,6 +219,54 @@ const normalizeRepoSlug = (value: string) =>
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+
+const resolveUniqueRepositoryName = async ({
+  supabase,
+  ownerId,
+  requestedName,
+}: {
+  supabase: ReturnType<typeof getSupabaseClient>;
+  ownerId: string;
+  requestedName: string;
+}) => {
+  const baseName = requestedName.trim();
+  if (!baseName) {
+    throw new Error('Repository name is required.');
+  }
+
+  let attempt = 0;
+  while (attempt < 100) {
+    const candidate =
+      attempt === 0
+        ? baseName
+        : attempt === 1
+          ? `${baseName}-fork`
+          : `${baseName}-fork-${attempt}`;
+    const candidateSlug = normalizeRepoSlug(candidate);
+
+    const { data, error } = await supabase
+      .from('repositories')
+      .select('id')
+      .eq('owner_id', ownerId)
+      .eq('slug', candidateSlug)
+      .limit(1);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data || data.length === 0) {
+      return {
+        name: candidate,
+        slug: candidateSlug,
+      };
+    }
+
+    attempt += 1;
+  }
+
+  throw new Error('Unable to generate a unique fork name for your account.');
+};
 
 const detectLanguageFromPath = (path: string) => {
   const extension = path.split('.').pop()?.toLowerCase() || '';
@@ -1976,6 +2037,205 @@ export const downloadRepositoryAsZip = async ({
   URL.revokeObjectURL(downloadUrl);
 };
 
+export const forkRepository = async ({
+  sourceRepoId,
+  branchMode,
+  branchName,
+}: ForkRepositoryInput): Promise<ForkRepositoryResult> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const hasToolListColumn = await hasRepositoryToolListColumn(supabase);
+  const repositorySelectColumns = await getRepositorySelectColumns(supabase);
+
+  const { data: sourceRepositoryRaw, error: sourceRepositoryError } = await supabase
+    .from('repositories')
+    .select('id, owner_id, name, slug, description, visibility, readme_md, archived_at' as any)
+    .eq('id', sourceRepoId)
+    .maybeSingle();
+
+  if (sourceRepositoryError) {
+    throw new Error(sourceRepositoryError.message);
+  }
+  if (!sourceRepositoryRaw) {
+    throw new Error('Source repository was not found.');
+  }
+
+  const sourceRepository = sourceRepositoryRaw as any;
+  if (sourceRepository.owner_id === user.id) {
+    throw new Error('You already own this repository.');
+  }
+  if (sourceRepository.visibility !== 'public') {
+    throw new Error('Only public repositories can be forked.');
+  }
+  if (sourceRepository.archived_at) {
+    throw new Error('Archived repositories cannot be forked right now.');
+  }
+
+  const normalizedBranchName = (branchName || '').trim();
+  if (branchMode === 'new_branch' && !normalizedBranchName) {
+    throw new Error('Branch name is required when creating a new branch fork.');
+  }
+
+  const { data: sourceFilesRaw, error: sourceFilesError } = await supabase
+    .from('repo_files')
+    .select('path, language, content, size_bytes')
+    .eq('repo_id', sourceRepoId)
+    .order('path', { ascending: true });
+
+  if (sourceFilesError) {
+    throw new Error(sourceFilesError.message);
+  }
+
+  const sourceFiles = (sourceFilesRaw || []) as Array<{
+    path: string;
+    language: string;
+    content: string;
+    size_bytes: number;
+  }>;
+
+  const { name: forkName, slug: forkSlug } = await resolveUniqueRepositoryName({
+    supabase,
+    ownerId: user.id,
+    requestedName: sourceRepository.name,
+  });
+
+  const forkDescription = [
+    sourceRepository.description || '',
+    `Fork of ${sourceRepository.slug}.`,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  const { data: forkRepositoryRaw, error: forkInsertError } = await supabase
+    .from('repositories')
+    .insert({
+      owner_id: user.id,
+      name: forkName,
+      slug: forkSlug,
+      description: forkDescription,
+      visibility: 'private',
+      ...(hasToolListColumn ? { show_in_tool_list: false } : {}),
+      readme_md: sourceRepository.readme_md || '',
+    })
+    .select(repositorySelectColumns as any)
+    .single();
+
+  if (forkInsertError || !forkRepositoryRaw) {
+    throw new Error(forkInsertError?.message || 'Failed to create the forked repository.');
+  }
+
+  const forkRepositoryData = forkRepositoryRaw as any;
+
+  const forkFiles = sourceFiles.length > 0
+    ? sourceFiles.map((file) => ({
+        repo_id: forkRepositoryData.id,
+        path: file.path,
+        language: file.language,
+        content: file.content || '',
+        size_bytes: file.size_bytes || 0,
+        created_by: user.id,
+      }))
+    : sourceRepository.readme_md
+      ? [{
+          repo_id: forkRepositoryData.id,
+          path: 'README.md',
+          language: 'markdown',
+          content: sourceRepository.readme_md,
+          size_bytes: new TextEncoder().encode(sourceRepository.readme_md).length,
+          created_by: user.id,
+        }]
+      : [];
+
+  if (forkFiles.length > 0) {
+    const { error: fileInsertError } = await supabase.from('repo_files').upsert(forkFiles, {
+      onConflict: 'repo_id,path',
+    });
+
+    if (fileInsertError) {
+      throw new Error(fileInsertError.message);
+    }
+  }
+
+  let gitHash: string | null = null;
+  try {
+    const gitAuthor: GitAuthor = {
+      name: (user.user_metadata?.full_name as string | undefined)?.trim() || 'Unknown',
+      email: user.email || '',
+    };
+    const gitCommit = await initGitRepo({
+      repoId: forkRepositoryData.id,
+      files: forkFiles.map((file) => ({ path: file.path, content: file.content })),
+      author: gitAuthor,
+    });
+    gitHash = gitCommit.hash;
+  } catch (gitError) {
+    console.error('Git VCS init failed for fork (non-blocking):', gitError);
+  }
+
+  const { error: commitError } = await supabase.from('repo_commits').insert({
+    repo_id: forkRepositoryData.id,
+    author_id: user.id,
+    message: `Fork ${sourceRepository.name}`,
+    files_changed: forkFiles.length,
+    git_hash: gitHash,
+    parent_hash: null,
+  });
+
+  if (commitError) {
+    throw new Error(commitError.message);
+  }
+
+  let createdBranchName: string | null = null;
+  if (branchMode === 'new_branch' && normalizedBranchName) {
+    await gitCreateBranch({
+      repoId: forkRepositoryData.id,
+      branchName: normalizedBranchName,
+      fromBranch: 'main',
+    });
+    createdBranchName = normalizedBranchName;
+  }
+
+  const { data: forkerProfile } = await supabase
+    .from('user_profiles')
+    .select('username, full_name')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  const forkerUsername = (forkerProfile as any)?.username || user.email?.split('@')[0] || 'user';
+
+  if (sourceRepository.owner_id !== user.id) {
+    const { error: notificationError } = await supabase.from('notifications').insert({
+      user_id: sourceRepository.owner_id,
+      from_user_id: user.id,
+      type: 'repo_forked',
+      message: `@${forkerUsername} forked your repository ${sourceRepository.name}.`,
+    });
+
+    if (notificationError) {
+      console.error('Failed to create fork notification (non-blocking):', notificationError);
+    }
+  }
+
+  await pushActivity({
+    userId: user.id,
+    email: user.email || '',
+    activityType: 'repo_forked',
+    context: {
+      source_repo_id: sourceRepository.id,
+      source_repo_name: sourceRepository.name,
+      fork_repo_id: forkRepositoryData.id,
+      fork_repo_name: forkRepositoryData.name,
+      branch_mode: branchMode,
+      branch_name: createdBranchName,
+    },
+  });
+
+  return {
+    repository: mapRepositoryRecord(forkRepositoryData),
+    createdBranchName,
+  };
+};
+
 export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: UploadRepositoryFilesInput) => {
   const { supabase, user } = await ensureAuthenticatedUser();
 
@@ -2891,4 +3151,12 @@ export const markAllNotificationsRead = async (): Promise<void> => {
 export const markNotificationRead = async (notificationId: string): Promise<void> => {
   const { supabase, user } = await ensureAuthenticatedUser();
   await supabase.from('notifications').update({ read: true }).eq('id', notificationId).eq('user_id', user.id);
+};
+
+export const deleteNotification = async (notificationId: string): Promise<void> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { error } = await supabase.from('notifications').delete().eq('id', notificationId).eq('user_id', user.id);
+  if (error) {
+    throw new Error(error.message);
+  }
 };

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Check, Code2, Copy, Eye, FolderGit2, Github, Globe, Linkedin, MapPin, UserCheck, UserPlus } from 'lucide-react';
 import GitHubReadme from '@/components/GitHubReadme';
 import Footer from '@/components/Footer';
+import ForkRepositoryButton from '@/components/ForkRepositoryButton';
 import GlassCard from '@/components/GlassCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -333,6 +334,16 @@ const PublicProfile = () => {
                             </div>
                             <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">{repo.visibility}</span>
                           </div>
+                          {!isOwnProfile && (
+                            <div className="pb-2">
+                              <ForkRepositoryButton
+                                repoId={repo.id}
+                                repoName={repo.name}
+                                ownerId={profile.id}
+                                ownerUsername={profile.username}
+                              />
+                            </div>
+                          )}
                           <p className="text-xs text-muted-foreground mt-auto pt-2">Updated {formatDate(repo.updated_at)}</p>
                         </GlassCard>
                       </motion.div>

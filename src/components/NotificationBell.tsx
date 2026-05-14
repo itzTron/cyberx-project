@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bell, Check, UserPlus, X } from 'lucide-react';
+import { Bell, Check, Trash2, UserPlus, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
-  getNotifications, getUnreadNotificationCount, markAllNotificationsRead, markNotificationRead,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  deleteNotification,
+  getNotifications,
+  getUnreadNotificationCount,
+  markAllNotificationsRead,
+  markNotificationRead,
   type HubNotification,
 } from '@/lib/hubApi';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
@@ -41,6 +53,8 @@ const NotificationBell = () => {
   const [notifications, setNotifications] = useState<HubNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<HubNotification | null>(null);
+  const [isManagingNotification, setIsManagingNotification] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const isOpenRef = useRef(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -178,14 +192,44 @@ const NotificationBell = () => {
     } catch { /* ignore */ }
   };
 
-  const handleClickNotification = async (n: HubNotification) => {
-    if (!n.read) {
-      await markNotificationRead(n.id).catch(() => {});
-      setNotifications((prev) => prev.map((item) => item.id === n.id ? { ...item, read: true } : item));
+  const handleMarkNotificationRead = async (notificationId: string) => {
+    setIsManagingNotification(true);
+    try {
+      await markNotificationRead(notificationId);
+      setNotifications((prev) => prev.map((item) => item.id === notificationId ? { ...item, read: true } : item));
+      setSelectedNotification((prev) => (prev && prev.id === notificationId ? { ...prev, read: true } : prev));
       setUnreadCount((prev) => Math.max(0, prev - 1));
+    } finally {
+      setIsManagingNotification(false);
     }
+  };
+
+  const handleDeleteNotification = async (notificationId: string) => {
+    setIsManagingNotification(true);
+    try {
+      const wasUnread = notifications.find((item) => item.id === notificationId && !item.read);
+      await deleteNotification(notificationId);
+      setNotifications((prev) => prev.filter((item) => item.id !== notificationId));
+      setSelectedNotification((prev) => (prev?.id === notificationId ? null : prev));
+      if (wasUnread) {
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      }
+    } finally {
+      setIsManagingNotification(false);
+    }
+  };
+
+  const handleClickNotification = (notification: HubNotification) => {
+    setSelectedNotification(notification);
+  };
+
+  const handleOpenNotificationSource = () => {
+    if (!selectedNotification?.fromProfile?.username) {
+      return;
+    }
+    setSelectedNotification(null);
     setIsOpen(false);
-    if (n.fromProfile?.username) navigate(`/u/${n.fromProfile.username}`);
+    navigate(`/u/${selectedNotification.fromProfile.username}`);
   };
 
   return (
@@ -222,7 +266,7 @@ const NotificationBell = () => {
                 {unreadCount > 0 && (
                   <button type="button" onClick={() => void handleMarkAllRead()}
                     className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded">
-                    <Check className="w-3 h-3" />Mark all read
+                    <Check className="w-3 h-3" />Read all messages
                   </button>
                 )}
                 <button type="button" onClick={() => setIsOpen(false)} className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors">
@@ -273,6 +317,67 @@ const NotificationBell = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <Dialog open={Boolean(selectedNotification)} onOpenChange={(open) => { if (!open) setSelectedNotification(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Notification actions</DialogTitle>
+            <DialogDescription>
+              {selectedNotification?.message || 'Choose what to do with this notification.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedNotification && (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+              <p className="text-foreground">
+                {selectedNotification.fromProfile ? (
+                  <>
+                    <span className="font-semibold text-primary">@{selectedNotification.fromProfile.username}</span>{' '}
+                    {getNotificationMessage(selectedNotification)}
+                  </>
+                ) : (
+                  selectedNotification.message
+                )}
+              </p>
+              <p className="mt-2 text-xs">{timeAgo(selectedNotification.created_at)}</p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {selectedNotification?.fromProfile?.username && (
+                <Button type="button" variant="outline" onClick={handleOpenNotificationSource} disabled={isManagingNotification}>
+                  View profile
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => selectedNotification && void handleMarkNotificationRead(selectedNotification.id)}
+                disabled={isManagingNotification || !selectedNotification || selectedNotification.read}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                {selectedNotification?.read ? 'Already read' : 'Mark as read'}
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="ghost" onClick={() => setSelectedNotification(null)} disabled={isManagingNotification}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => selectedNotification && void handleDeleteNotification(selectedNotification.id)}
+                disabled={isManagingNotification || !selectedNotification}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
