@@ -19,7 +19,6 @@ A full-featured cybersecurity platform built with **Vite + React + TypeScript**.
 
 | Category | Highlights |
 |---|---|
-| **Security Tools** | Network scanner, encryption suite (AES-256), password analyser, threat detector |
 | **Hub / Dashboard** | GitHub-style workspace — create repositories, upload code, view commits, manage files |
 | **Git VCS** | Real Git-compatible version control — SHA-1 commit hashes, branches, merge, file-level diffs |
 | **CodeFile Editor** | Inline code editor with auto language detection, syntax preview, edit existing files or create new ones |
