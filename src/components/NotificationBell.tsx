@@ -8,6 +8,7 @@ import {
   getNotifications, getUnreadNotificationCount, markAllNotificationsRead, markNotificationRead,
   type HubNotification,
 } from '@/lib/hubApi';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
 const POLL_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -41,6 +42,12 @@ const NotificationBell = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const isOpenRef = useRef(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
 
   // Poll unread count
   const pollCount = useCallback(async () => {
@@ -50,21 +57,109 @@ const NotificationBell = () => {
     } catch { /* unauthenticated or table missing */ }
   }, []);
 
+  const loadNotifications = useCallback(async (showLoader = false) => {
+    if (showLoader) {
+      setIsLoading(true);
+    }
+
+    try {
+      const data = await getNotifications();
+      setNotifications(data);
+      setUnreadCount(data.filter((n) => !n.read).length);
+    } catch {
+      // unauthenticated or table missing
+    } finally {
+      if (showLoader) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     void pollCount();
     const timer = setInterval(() => void pollCount(), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [pollCount]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setUserId(data.user?.id ?? null);
+    }).catch(() => {
+      setUserId(null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUserId = session?.user?.id ?? null;
+      setUserId(nextUserId);
+
+      if (!nextUserId) {
+        setNotifications([]);
+        setUnreadCount(0);
+        return;
+      }
+
+      void pollCount();
+      if (isOpenRef.current) {
+        void loadNotifications();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [loadNotifications, pollCount]);
+
+  useEffect(() => {
+    if (!userId || !isSupabaseConfigured()) {
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          void pollCount();
+          if (isOpenRef.current) {
+            void loadNotifications();
+          }
+        },
+      )
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') {
+          return;
+        }
+
+        void pollCount();
+        if (isOpenRef.current) {
+          void loadNotifications();
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadNotifications, pollCount, userId]);
+
   // Load full list when panel opens
   useEffect(() => {
     if (!isOpen) return;
-    setIsLoading(true);
-    getNotifications()
-      .then((data) => { setNotifications(data); setUnreadCount(data.filter((n) => !n.read).length); })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, [isOpen]);
+    void loadNotifications(true);
+  }, [isOpen, loadNotifications]);
 
   // Close on outside click
   useEffect(() => {
