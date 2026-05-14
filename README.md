@@ -23,12 +23,14 @@ A full-featured cybersecurity platform built with **Vite + React + TypeScript**.
 | **Hub / Dashboard** | GitHub-style workspace — create repositories, upload code, view commits, manage files |
 | **Git VCS** | Real Git-compatible version control — SHA-1 commit hashes, branches, merge, file-level diffs |
 | **CodeFile Editor** | Inline code editor with auto language detection, syntax preview, edit existing files or create new ones |
+| **Repository Forking** | Fork public repositories into your own account, keep the fork on `main`, or create a new branch from `main` |
+| **Social Notifications** | Follow and fork notifications with realtime panel updates, per-notification actions, read-all, and delete |
 | **🤖 Tron Agent** | AI repository assistant powered by OpenRouter — ask questions, search code, view history, and commit changes via natural language |
 | **GitHub Import** | Import public GitHub repositories directly into your hub |
 | **User Profiles** | Avatar upload & crop, bio, social links (LinkedIn, GitHub, website), phone & address |
 | **Location Picker** | Interactive Google Maps picker with **LocationIQ**-powered geocoding (forward & reverse) |
 | **Profile README** | Markdown-based profile page with GitHub-flavored rendering and asset support |
-| **Activity Feed** | Real-time activity logging for all repository and profile actions |
+| **Activity Feed** | Activity logging for repository, profile, fork, and Git operations |
 | **Auth System** | Password sign-in, GitHub OAuth, **OTP email auth** (passwordless), JWT, email verification, and session management |
 | **UI/UX** | Dark theme, glassmorphism, Matrix rain animation, neon accents, Framer Motion animations, typewriter hero text, page progress bar |
 | **Responsive** | Fully responsive across desktop, tablet, and mobile devices |
@@ -77,7 +79,44 @@ Frontend receives token_hash
 
 ---
 
-## 🤖 Tron — AI Repository Agent
+## Repository Hub, Forking & Notifications
+
+The repository hub now supports social repository workflows in addition to creating, uploading, importing, editing, and branching repositories.
+
+### Repository Forking
+
+- Public repositories can be forked from `/tools` and from another user's public profile repository list.
+- Forks are copied into the signed-in user's account as private repositories with the original files included.
+- During fork creation, the user can keep the fork on `main` or create a new branch from `main`.
+- Forked repositories are visible immediately in `/repository` with their copied files and Git history.
+- If a repository name already exists in the user's account, the fork flow generates a unique `-fork` name.
+
+### Social Notifications
+
+- Following a user creates an in-app `new_follower` notification and can send a formatted follow email through the Express backend.
+- Forking a repository creates a `repo_forked` notification for the original repository owner.
+- The notification bell subscribes to Supabase Realtime changes on `public.notifications`, so open panels update without closing or waiting for polling.
+- The notification panel supports **Read all messages**, selecting a single notification, marking one notification as read, deleting one notification, and navigating to the sender profile.
+
+### Required Social Migrations
+
+These migrations must be applied for the social notification and fork flows:
+
+```text
+20260514120000_add_social_follow_notifications.sql
+20260515093000_enable_realtime_for_notifications.sql
+20260515100000_extend_notifications_for_repo_forks.sql
+```
+
+Apply them with:
+
+```bash
+supabase db push
+```
+
+---
+
+## Tron - AI Repository Agent
 
 **Tron** is a built-in AI assistant that lives at `/tron`. It connects to your repositories and lets you interact with them using plain English.
 
@@ -121,6 +160,7 @@ Get a free API key at [openrouter.ai](https://openrouter.ai/). The default model
 | **Animations** | [Framer Motion](https://www.framer.com/motion/) |
 | **Backend (Auth)** | [Express 4](https://expressjs.com/) — OTP generation, SMTP, JWT issuance |
 | **Database / Auth** | [Supabase](https://supabase.com/) (Auth, PostgreSQL, Storage) |
+| **Realtime** | Supabase Realtime subscriptions for notification panel updates |
 | **Email** | [Nodemailer 8](https://nodemailer.com/) — SMTP email delivery |
 | **JWT** | [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) |
 | **Rate Limiting** | [express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) |
@@ -184,6 +224,7 @@ Open `.env` in your editor and set the required values:
 ```env
 # ── OTP Auth Backend ──────────────────────────────────────────────
 VITE_API_BASE_URL=http://localhost:3001
+VITE_SERVER_URL=http://localhost:3001
 
 # ── Supabase (Required) ──────────────────────────────────────────
 VITE_SUPABASE_PROJECT_ID=your_project_id
@@ -265,7 +306,13 @@ supabase link --project-ref your_project_id
 supabase db push
 ```
 
-Or paste each migration file manually into **Supabase → SQL Editor → New query → Run**.
+The latest social repository features depend on these migrations being applied:
+
+- `20260514120000_add_social_follow_notifications.sql` creates `follows` and `notifications`.
+- `20260515093000_enable_realtime_for_notifications.sql` publishes `notifications` to Supabase Realtime.
+- `20260515100000_extend_notifications_for_repo_forks.sql` adds `repo_forked` notifications and the notification delete policy.
+
+Or paste each migration file manually into **Supabase -> SQL Editor -> New query -> Run**.
 
 #### Option B — Local Supabase (Docker)
 
@@ -330,11 +377,16 @@ cyberx-project/
 │   ├── middleware/
 │   │   └── auth.js             # JWT verification middleware (verifyJwt)
 │   └── routes/
-│       └── auth.js             # POST /auth/send-otp + POST /auth/verify-otp
+│       ├── auth.js             # POST /auth/send-otp + POST /auth/verify-otp
+│       ├── contact.js          # Contact form email notifications
+│       ├── follow.js           # Follow email notifications
+│       └── report.js           # Report/flag email notifications
 ├── src/
 │   ├── components/             # Reusable UI components
 │   │   ├── ui/                 # shadcn/ui primitives
 │   │   ├── Navbar.tsx          # Global navigation bar
+│   │   ├── NotificationBell.tsx # Realtime notification dropdown and actions
+│   │   ├── ForkRepositoryButton.tsx # Public repository fork dialog
 │   │   ├── Footer.tsx          # Site footer
 │   │   ├── MatrixRain.tsx      # Matrix rain background animation
 │   │   ├── Preloader.tsx       # Splash screen preloader
@@ -361,10 +413,8 @@ cyberx-project/
 │   │   └── utils.ts            # General utilities
 │   ├── pages/                  # Route page components
 │   │   ├── Index.tsx            # Homepage
-│   │   ├── Features.tsx         # Features overview
-│   │   ├── Tools.tsx            # Security tools listing
+│   │   ├── Tools.tsx            # Public repo list and fork entry point
 │   │   ├── ToolDetail.tsx       # Individual tool detail page
-│   │   ├── Download.tsx         # Download page
 │   │   ├── Docs.tsx             # Documentation page
 │   │   ├── Contact.tsx          # Contact form
 │   │   ├── SignIn.tsx           # Sign in (password / GitHub OAuth / OTP tabs)
@@ -372,8 +422,10 @@ cyberx-project/
 │   │   ├── Dashboard.tsx        # User hub (profile card, README, recent activity)
 │   │   ├── Repository.tsx       # Repository management (files, commits, branches, editor)
 │   │   ├── TronAgent.tsx        # 🤖 Tron AI agent chat page
+│   │   ├── PublicProfile.tsx    # Public user profile with follow and fork actions
 │   │   ├── Profile.tsx          # Profile settings (avatar, bio, location, links)
 │   │   ├── Activity.tsx         # Activity feed
+│   │   ├── PrivacyPolicy.tsx    # Privacy policy
 │   │   └── NotFound.tsx         # 404 page
 │   ├── App.tsx                 # Root component with routing
 │   ├── main.tsx                # Application entry point
@@ -381,8 +433,11 @@ cyberx-project/
 ├── supabase/
 │   ├── config.toml             # Supabase project configuration
 │   └── migrations/             # SQL migration files
-│       ├── ...                 # Git VCS tables
-│       └── 20260422000000_otp_tokens.sql  # OTP tokens table
+│       ├── 20260418120000_add_git_vcs_tables.sql
+│       ├── 20260422000000_otp_tokens.sql
+│       ├── 20260514120000_add_social_follow_notifications.sql
+│       ├── 20260515093000_enable_realtime_for_notifications.sql
+│       └── 20260515100000_extend_notifications_for_repo_forks.sql
 ├── .env.example                # Frontend environment variable template
 ├── package.json                # Frontend dependencies & scripts
 ├── tailwind.config.ts          # Tailwind CSS configuration
@@ -397,10 +452,8 @@ cyberx-project/
 | Route | Page | Description |
 |---|---|---|
 | `/` | Index | Homepage with hero, features overview |
-| `/features` | Features | Detailed feature breakdown |
-| `/tools` | Tools | Security tools listing |
+| `/tools` | Tools | Public repo list with download and fork actions |
 | `/tools/:slug` | ToolDetail | Individual tool detail |
-| `/download` | Download | Download & installation page |
 | `/docs` | Docs | Documentation |
 | `/contact` | Contact | Contact form |
 | `/signin` | SignIn | Sign in — password, GitHub OAuth, or Email OTP |
@@ -410,7 +463,9 @@ cyberx-project/
 | `/tron` | TronAgent | 🤖 Tron AI agent chat interface |
 | `/profile` | Profile | Profile settings |
 | `/activity` | Activity | Activity feed |
-| `/:username` | Dashboard | Public profile view |
+| `/privacy-policy` | PrivacyPolicy | Privacy policy |
+| `/u/:username` | PublicProfile | Public profile with follow and repository fork actions |
+| `/:username` | Dashboard | User dashboard/profile route |
 
 ---
 
@@ -492,7 +547,7 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 - [Cloudflare Pages](https://pages.cloudflare.com/)
 - [GitHub Pages](https://pages.github.com/)
 
-> **Production note:** The Express auth backend (`/server`) must be deployed as a separate Node.js service (e.g. [Railway](https://railway.app/), [Render](https://render.com/), [Fly.io](https://fly.io/)). Update `VITE_API_BASE_URL` to point to your production backend URL.
+> **Production note:** The Express backend (`/server`) must be deployed as a separate Node.js service (e.g. [Railway](https://railway.app/), [Render](https://render.com/), [Fly.io](https://fly.io/)). Update `VITE_API_BASE_URL` and `VITE_SERVER_URL` to point to your production backend URL.
 
 ---
 
@@ -504,6 +559,26 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 - Confirm `VITE_SUPABASE_ANON_KEY` is set.
 - Confirm `VITE_SUPABASE_URL` or `VITE_SUPABASE_PROJECT_ID` is set.
 - **Restart the dev server** after editing `.env` (Vite requires a restart to load new env variables).
+
+### Notifications do not update instantly
+
+- Confirm `20260515093000_enable_realtime_for_notifications.sql` has been applied to the target Supabase project.
+- Confirm `public.notifications` is included in the `supabase_realtime` publication.
+- Test with two signed-in sessions: the recipient's notification panel should update when another user follows them or forks their repository.
+- If the panel still does not update, refresh once and verify a row exists in `public.notifications` for the recipient user.
+
+### Follow emails or fork notifications are missing
+
+- Confirm the `server/` backend is running and `VITE_SERVER_URL` points to it.
+- Confirm `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are set in `server/.env`.
+- Confirm `20260514120000_add_social_follow_notifications.sql` and `20260515100000_extend_notifications_for_repo_forks.sql` have been applied.
+
+### Fork button fails to create a repository
+
+- Confirm the source repository is public and not archived.
+- Confirm the signed-in user is not the owner of the source repository.
+- Confirm migrations for Git VCS and social notifications have been applied.
+- Check browser DevTools and Supabase logs for RLS errors on `repositories`, `repo_files`, `repo_commits`, `git_refs`, or `notifications`.
 
 ### OTP email not received
 
@@ -572,6 +647,7 @@ Cyberspace-X 2.0 includes a **browser-native Git VCS** that produces **real Git-
 
 - **Commit Hashes** — every commit gets a Git-compatible SHA-1 hash (identical to `git hash-object`)
 - **Branches** — create, switch, merge, and delete branches
+- **Forking** — clone public repositories into a user's account and optionally create a new branch from `main`
 - **Merge** — file-level merge with merge commit
 - **Diff Viewer** — click any commit to see file-level additions, modifications, and deletions
 - **Retroactive Backfill** — existing repos automatically get Git hashes on first load
