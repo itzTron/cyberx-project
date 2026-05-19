@@ -30,10 +30,28 @@ app.disable('x-powered-by');
 app.set('trust proxy', trustProxyValue);
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-const allowedOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:8080')
+const defaultAllowedOrigins = isProduction ? '' : 'http://localhost:8080';
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || defaultAllowedOrigins)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const allowedOriginSet = new Set(allowedOrigins.map((origin) => origin.toLowerCase()));
+
+const normalizeOrigin = (value) => {
+  try {
+    return new URL(value).origin.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+const isSameHostOrigin = (origin, req) => {
+  try {
+    return new URL(origin).host.toLowerCase() === (req.get('host') || '').toLowerCase();
+  } catch {
+    return false;
+  }
+};
 
 app.use(
   helmet({
@@ -53,20 +71,30 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // allow requests with no origin (curl, Postman) in development
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      callback(new Error(`CORS: origin "${origin}" not allowed`));
+app.use((req, res, next) => {
+  return cors(
+    {
+      origin: (origin, callback) => {
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        const normalizedOrigin = normalizeOrigin(origin);
+        if (
+          (normalizedOrigin && allowedOriginSet.has(normalizedOrigin)) ||
+          isSameHostOrigin(origin, req)
+        ) {
+          return callback(null, true);
+        }
+
+        callback(new Error(`CORS: origin "${origin}" not allowed`));
+      },
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true,
     },
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
-  }),
-);
+  )(req, res, next);
+});
 
 app.use(express.json({ limit: '32kb' }));
 

@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+azure
+docs
+dist
+node_modules
+server/node_modules
+scratch
+supabase
+.env
+server/.env
+README.md
+TODO.md
