@@ -549,6 +549,8 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 
 > **Azure note:** This repository is also prepared for a single Azure App Service deployment where the Express server hosts the built frontend and API together. See [docs/azure-app-service.md](./docs/azure-app-service.md).
 
+> **AWS note:** For AWS, use ECS Express Mode rather than App Runner. See [docs/aws-ecs-express.md](./docs/aws-ecs-express.md).
+
 ---
 
 ## 🔧 Troubleshooting
