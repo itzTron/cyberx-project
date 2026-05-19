@@ -1,0 +1,72 @@
+[
+  {
+    "name": "NODE_ENV",
+    "value": "production",
+    "slotSetting": false
+  },
+  {
+    "name": "PORT",
+    "value": "8080",
+    "slotSetting": false
+  },
+  {
+    "name": "TRUST_PROXY",
+    "value": "1",
+    "slotSetting": false
+  },
+  {
+    "name": "FRONTEND_ORIGIN",
+    "value": "https://cyberx-project.azurewebsites.net",
+    "slotSetting": false
+  },
+  {
+    "name": "OWNER_EMAIL",
+    "value": "owner@example.com",
+    "slotSetting": false
+  },
+  {
+    "name": "JWT_SECRET",
+    "value": "replace-with-a-long-random-secret",
+    "slotSetting": true
+  },
+  {
+    "name": "SUPABASE_URL",
+    "value": "https://your-project-id.supabase.co",
+    "slotSetting": false
+  },
+  {
+    "name": "SUPABASE_SERVICE_ROLE_KEY",
+    "value": "your-supabase-service-role-key",
+    "slotSetting": true
+  },
+  {
+    "name": "SMTP_HOST",
+    "value": "smtp.gmail.com",
+    "slotSetting": false
+  },
+  {
+    "name": "SMTP_PORT",
+    "value": "587",
+    "slotSetting": false
+  },
+  {
+    "name": "SMTP_SECURE",
+    "value": "false",
+    "slotSetting": false
+  },
+  {
+    "name": "SMTP_USER",
+    "value": "your-smtp-user",
+    "slotSetting": true
+  },
+  {
+    "name": "SMTP_PASS",
+    "value": "your-smtp-password-or-app-password",
+    "slotSetting": true
+  },
+  {
+    "name": "SMTP_FROM",
+    "value": "Cyberspace-X <noreply@example.com>",
+    "slotSetting": false
+  }
+]

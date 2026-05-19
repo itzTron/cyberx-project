@@ -16,6 +16,7 @@ import {
   type PublicUserProfile, type HubRepository, type HubFollowStatus,
 } from '@/lib/hubApi';
 import { getSupabaseClient } from '@/lib/supabase';
+import { API_BASE_URL } from '@/lib/apiBaseUrl';
 
 const getInitials = (name: string) =>
   name.split(' ').map((p) => p.trim()[0] || '').join('').slice(0, 2).toUpperCase();
@@ -140,8 +141,7 @@ const PublicProfile = () => {
         toast({ title: '✦ Following!', description: `You are now following @${profile.username}.` });
 
         // 3. Fire-and-forget follow email notification
-        const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:3001';
-        void fetch(`${serverUrl}/follow/notify`, {
+        void fetch(`${API_BASE_URL}/follow/notify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

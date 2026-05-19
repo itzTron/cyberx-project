@@ -36,6 +36,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
+import { API_BASE_URL } from '@/lib/apiBaseUrl';
 import {
   getDashboardBootstrap,
   getTronChatState,
@@ -999,8 +1000,7 @@ const TronAgent = () => {
 
     // ── Fire-and-forget: send email notification to owner + auto-reply to user ──
     const activeThread = chatThreads.find((t) => t.id === activeThreadId);
-    const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:3001';
-    fetch(`${serverUrl}/report/flag`, {
+    fetch(`${API_BASE_URL}/report/flag`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

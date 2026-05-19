@@ -1,3 +1,5 @@
+import { API_BASE_URL } from './apiBaseUrl';
+
 /**
  * otpApi.ts
  * Frontend client for the Cyberspace-X OTP auth backend (Express on port 3001).
@@ -6,7 +8,7 @@
  *   VITE_API_BASE_URL  – base URL of the backend server (default: http://localhost:3001)
  */
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+const API_BASE = API_BASE_URL;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -156,10 +158,7 @@ export const sendOtp = (email: string): Promise<SendOtpResponse> =>
  * Returns the JWT token and user data.
  * Throws `OtpApiError` on failure.
  */
-export const verifyOtp = async (
-  email: string,
-  otp: string,
-): Promise<VerifyOtpResponse> => {
+export const verifyOtp = async (email: string, otp: string): Promise<VerifyOtpResponse> => {
   const result = await post<VerifyOtpResponse>('/auth/verify-otp', { email, otp });
   storeOtpJwt(result.token);
   return result;

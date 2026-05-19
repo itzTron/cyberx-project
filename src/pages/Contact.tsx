@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
+import { API_BASE_URL } from '@/lib/apiBaseUrl';
 
 const purposes = [
   { value: 'bug', label: 'Bug Report', icon: Bug },
@@ -32,8 +33,7 @@ const Contact = () => {
     setIsSubmitting(true);
 
     try {
-      const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:3001';
-      const res = await fetch(`${serverUrl}/contact/send`, {
+      const res = await fetch(`${API_BASE_URL}/contact/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

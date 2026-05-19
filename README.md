@@ -224,7 +224,8 @@ Open `.env` in your editor and set the required values:
 ```env
 # ── OTP Auth Backend ──────────────────────────────────────────────
 VITE_API_BASE_URL=http://localhost:3001
-VITE_SERVER_URL=http://localhost:3001
+# Optional legacy alias still supported by the app:
+# VITE_SERVER_URL=http://localhost:3001
 
 # ── Supabase (Required) ──────────────────────────────────────────
 VITE_SUPABASE_PROJECT_ID=your_project_id
@@ -547,7 +548,7 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 - [Cloudflare Pages](https://pages.cloudflare.com/)
 - [GitHub Pages](https://pages.github.com/)
 
-> **Production note:** The Express backend (`/server`) must be deployed as a separate Node.js service (e.g. [Railway](https://railway.app/), [Render](https://render.com/), [Fly.io](https://fly.io/)). Update `VITE_API_BASE_URL` and `VITE_SERVER_URL` to point to your production backend URL.
+> **Azure note:** This repository is also prepared for a single Azure App Service deployment where the Express server hosts the built frontend and API together. See [docs/azure-app-service.md](./docs/azure-app-service.md).
 
 ---
 
@@ -569,7 +570,7 @@ The optimised production bundle is output to the `dist/` directory. You can depl
 
 ### Follow emails or fork notifications are missing
 
-- Confirm the `server/` backend is running and `VITE_SERVER_URL` points to it.
+- Confirm the `server/` backend is running and `VITE_API_BASE_URL` points to it.
 - Confirm `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are set in `server/.env`.
 - Confirm `20260514120000_add_social_follow_notifications.sql` and `20260515100000_extend_notifications_for_repo_forks.sql` have been applied.
 

@@ -4,6 +4,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
+const { escapeHtml } = require('../lib/html');
 
 const router = express.Router();
 
@@ -67,11 +68,11 @@ const buildFollowEmailHtml = (followerName, followerUsername, targetName) => `
         </tr>
         <tr>
           <td style="padding:36px 32px;text-align:center;">
-            <p style="margin:0 0 6px;font-size:15px;color:#e0e0ff;">Hi <strong>${targetName}</strong>,</p>
+            <p style="margin:0 0 6px;font-size:15px;color:#e0e0ff;">Hi <strong>${escapeHtml(targetName)}</strong>,</p>
             <p style="margin:0 0 24px;color:#9ca3af;font-size:14px;">Someone just followed your profile on Cyberspace-X.</p>
             <div style="background:#1a1a2e;border:2px solid #6366f1;border-radius:10px;padding:20px 32px;margin-bottom:24px;display:inline-block;">
-              <p style="margin:0 0 4px;font-size:20px;font-weight:700;color:#a5b4fc;">@${followerUsername}</p>
-              <p style="margin:0;font-size:14px;color:#9ca3af;">${followerName} is now following you.</p>
+              <p style="margin:0 0 4px;font-size:20px;font-weight:700;color:#a5b4fc;">@${escapeHtml(followerUsername)}</p>
+              <p style="margin:0;font-size:14px;color:#9ca3af;">${escapeHtml(followerName)} is now following you.</p>
             </div>
             <p style="margin:0;color:#6b7280;font-size:13px;">Visit their profile on Cyberspace-X to follow back.</p>
           </td>
@@ -104,7 +105,10 @@ router.post('/notify', followLimiter, async (req, res) => {
     }
 
     const admin = getAdminClient();
-    const [{ data: followerProfile, error: followerError }, { data: targetProfile, error: targetError }] = await Promise.all([
+    const [
+      { data: followerProfile, error: followerError },
+      { data: targetProfile, error: targetError },
+    ] = await Promise.all([
       admin.from('user_profiles').select('id, username, full_name').eq('id', followerUserId).maybeSingle(),
       admin.from('user_profiles').select('id, email, username, full_name').eq('id', targetUserId).maybeSingle(),
     ]);
