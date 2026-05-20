@@ -391,4 +391,134 @@ router.post('/verify-otp', verifyOtpLimiter, async (req, res) => {
   }
 });
 
+
+// ── POST /auth/secondary-email/send-otp ──────────────────────────────────────
+// Sends a 6-digit OTP to the requested secondary email address.
+// Rate-limited to 3 sends per email per 10 minutes.
+router.post('/secondary-email/send-otp', sendOtpLimiter, async (req, res) => {
+  try {
+    const rawEmail = (req.body?.email || '').toString().trim().toLowerCase();
+    const userId   = (req.body?.userId || '').toString().trim();
+
+    if (!isValidEmail(rawEmail)) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required.' });
+    }
+    if (!SMTP_USER || !SMTP_PASS) {
+      return res.status(500).json({ error: 'Email service is not configured.' });
+    }
+
+    const supabase = getAdminClient();
+
+    // Make sure the requested email is NOT already a primary email on any account
+    const { data: listData } = await supabase.auth.admin.listUsers();
+    const conflict = (listData?.users || []).find(
+      (u) => u.email?.toLowerCase() === rawEmail && u.id !== userId,
+    );
+    if (conflict) {
+      return res.status(409).json({
+        error: 'This email is already the primary email of another account.',
+        code: 'PRIMARY_EMAIL_CONFLICT',
+      });
+    }
+
+    const otp       = generateOtp();
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString();
+    const otpKey    = `secondary:${userId}:${rawEmail}`;   // namespaced so it won't collide with sign-in OTPs
+
+    const { error: dbError } = await supabase.from('otp_tokens').upsert(
+      { email: otpKey, otp, expires_at: expiresAt, attempts: 0 },
+      { onConflict: 'email' },
+    );
+    if (dbError) {
+      console.error('[secondary-email/send-otp] DB error:', dbError.message);
+      return res.status(500).json({ error: 'Failed to store OTP. Please try again.' });
+    }
+
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+      to: rawEmail,
+      subject: `Verify your secondary email — ${otp}`,
+      text: `Your verification code is: ${otp}\n\nExpires in ${OTP_EXPIRY_MINUTES} minutes. Do not share this code.`,
+      html: buildOtpEmailHtml(otp).replace(
+        'sign in to your account.',
+        'verify your secondary email address on Cyberspace-X.',
+      ),
+    });
+
+    console.log(`[secondary-email/send-otp] OTP sent to ${rawEmail} for user ${userId}`);
+    return res.status(200).json({ message: 'Verification code sent. Check your inbox.' });
+  } catch (err) {
+    console.error('[secondary-email/send-otp] Unexpected error:', err.message);
+    return res.status(500).json({ error: 'Failed to send verification code. Please try again.' });
+  }
+});
+
+// ── POST /auth/secondary-email/verify ────────────────────────────────────────
+// Verifies the OTP and saves secondary_email to user_profiles.
+router.post('/secondary-email/verify', verifyOtpLimiter, async (req, res) => {
+  try {
+    const rawEmail = (req.body?.email || '').toString().trim().toLowerCase();
+    const userId   = (req.body?.userId || '').toString().trim();
+    const otp      = (req.body?.otp || '').toString().trim();
+
+    if (!isValidEmail(rawEmail)) return res.status(400).json({ error: 'Valid email required.' });
+    if (!userId)                  return res.status(400).json({ error: 'User ID required.' });
+    if (!/^\d{6}$/.test(otp))     return res.status(400).json({ error: 'OTP must be 6 digits.' });
+
+    const supabase = getAdminClient();
+    const otpKey   = `secondary:${userId}:${rawEmail}`;
+
+    const { data: record, error: fetchErr } = await supabase
+      .from('otp_tokens').select('otp, expires_at, attempts').eq('email', otpKey).maybeSingle();
+
+    if (fetchErr) return res.status(500).json({ error: 'Verification failed. Please try again.' });
+    if (!record)  return res.status(400).json({ error: 'No verification code found. Please request a new one.' });
+
+    if (record.attempts >= MAX_ATTEMPTS) {
+      await supabase.from('otp_tokens').delete().eq('email', otpKey);
+      return res.status(429).json({ error: `Too many attempts. Please request a new code.`, code: 'MAX_ATTEMPTS_REACHED' });
+    }
+
+    await supabase.from('otp_tokens').update({ attempts: record.attempts + 1 }).eq('email', otpKey);
+
+    if (new Date() > new Date(record.expires_at)) {
+      await supabase.from('otp_tokens').delete().eq('email', otpKey);
+      return res.status(400).json({ error: 'Code expired. Please request a new one.', code: 'OTP_EXPIRED' });
+    }
+
+    if (!safeCompare(otp, record.otp)) {
+      const remaining = MAX_ATTEMPTS - (record.attempts + 1);
+      return res.status(400).json({
+        error: `Incorrect code. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`,
+        code: 'INVALID_OTP', attemptsRemaining: remaining,
+      });
+    }
+
+    // OTP valid — clean up and write secondary_email to user_profiles
+    await supabase.from('otp_tokens').delete().eq('email', otpKey);
+
+    const { error: profileErr } = await supabase
+      .from('user_profiles')
+      .update({ secondary_email: rawEmail })
+      .eq('id', userId);
+
+    if (profileErr) {
+      console.error('[secondary-email/verify] profile update error:', profileErr.message, '| code:', profileErr.code);
+      return res.status(500).json({
+        error: `Verified, but could not save secondary email (${profileErr.message}). Please try again.`,
+      });
+    }
+
+    console.log(`[secondary-email/verify] Saved secondary email ${rawEmail} for user ${userId}`);
+    return res.status(200).json({ message: 'Secondary email verified and saved successfully.' });
+  } catch (err) {
+    console.error('[secondary-email/verify] Unexpected error:', err.message);
+    return res.status(500).json({ error: 'Verification failed. Please try again.' });
+  }
+});
+
 module.exports = router;

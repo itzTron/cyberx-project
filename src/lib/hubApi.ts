@@ -1448,6 +1448,59 @@ export const updateCurrentUserEmail = async (email: string) => {
   };
 };
 
+/** Fetch the secondary email currently saved on the profile (if any). */
+export const getSecondaryEmail = async (): Promise<string> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { data } = await supabase
+    .from('user_profiles')
+    .select('secondary_email')
+    .eq('id', user.id)
+    .maybeSingle();
+  return (data as any)?.secondary_email || '';
+};
+
+/** Send a 6-digit OTP to `email` via the backend for secondary-email verification. */
+export const sendSecondaryEmailOtp = async (email: string): Promise<void> => {
+  const { user } = await ensureAuthenticatedUser();
+  const serverUrl =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SERVER_URL as string | undefined) ||
+    'http://localhost:3001';
+
+  const res = await fetch(`${serverUrl}/auth/secondary-email/send-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim().toLowerCase(), userId: user.id }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || 'Failed to send verification code.');
+};
+
+/** Verify the OTP and persist secondary_email on the profile. */
+export const verifyAndSaveSecondaryEmail = async (email: string, otp: string): Promise<void> => {
+  const { user } = await ensureAuthenticatedUser();
+  const serverUrl =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SERVER_URL as string | undefined) ||
+    'http://localhost:3001';
+
+  const res = await fetch(`${serverUrl}/auth/secondary-email/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim().toLowerCase(), userId: user.id, otp: otp.trim() }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || 'Verification failed.');
+};
+
+/** Remove the secondary email from the profile (no OTP needed — it's the owner's choice). */
+export const removeSecondaryEmail = async (): Promise<void> => {
+  const { supabase, user } = await ensureAuthenticatedUser();
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ secondary_email: null })
+    .eq('id', user.id);
+  if (error) throw new Error(error.message);
+};
+
 export const updateProfileReadme = async (profileReadme: string) => {
   const { supabase, user } = await ensureAuthenticatedUser();
   const nextReadme = profileReadme;

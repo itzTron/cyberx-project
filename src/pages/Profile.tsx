@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Mail, MapPin, Navigation2, Phone, Save, Search, Trash2 } from 'lucide-react';
+import { Camera, Check, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Lock, Mail, MapPin, Navigation2, Phone, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
 
 import Footer from '@/components/Footer';
@@ -22,6 +22,10 @@ import {
   getCurrentUserProfile,
   updateCurrentUserEmail,
   updateCurrentUserProfile,
+  getSecondaryEmail,
+  sendSecondaryEmailOtp,
+  verifyAndSaveSecondaryEmail,
+  removeSecondaryEmail,
   type HubUserProfile,
 } from '@/lib/hubApi';
 import { loadGoogleMapsApi } from '@/lib/googleMaps';
@@ -122,6 +126,14 @@ const Profile = () => {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [savedAvatarUrl, setSavedAvatarUrl] = useState('');
   const [email, setEmail] = useState('');
+  const [secondaryEmail, setSecondaryEmail] = useState('');
+  const [newSecondaryEmail, setNewSecondaryEmail] = useState('');
+  const [secondaryOtp, setSecondaryOtp] = useState('');
+  // 'idle' | 'entering' | 'otp_sent' | 'saving' | 'done'
+  const [secondaryStep, setSecondaryStep] = useState<'idle' | 'entering' | 'otp_sent' | 'saving'>('idle');
+  const [secondaryStatus, setSecondaryStatus] = useState('');
+  const [secondaryStatusOk, setSecondaryStatusOk] = useState(false);
+  const [isSecondaryLoading, setIsSecondaryLoading] = useState(false);
   const [profileStatus, setProfileStatus] = useState('');
   const [emailStatus, setEmailStatus] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -159,6 +171,8 @@ const Profile = () => {
     setAvatarUrl(data.avatarUrl);
     setSavedAvatarUrl(data.avatarUrl);
     setEmail(data.email);
+    // Load secondary email
+    getSecondaryEmail().then((v) => setSecondaryEmail(v)).catch(() => {});
   };
 
   useEffect(() => {
@@ -1021,42 +1035,215 @@ const Profile = () => {
                 </CardContent>
               </Card>
 
+              {/* ── Account Email Card ─────────────────────────────────── */}
               <Card>
                 <CardHeader>
                   <CardTitle>Account Email</CardTitle>
-                  <CardDescription>Change the email used for this account.</CardDescription>
+                  <CardDescription>
+                    Your primary email is locked and cannot be changed. You can add a secondary email for authentication — the same secondary email may be used on multiple accounts.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleEmailUpdate} className="space-y-4">
-                    <div>
-                      <label htmlFor="profile-email" className="block text-sm text-foreground mb-2">
-                        Email
-                      </label>
-                      <Input
-                        id="profile-email"
-                        type="email"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        placeholder="you@example.com"
-                      />
+                <CardContent className="space-y-6">
+
+                  {/* Primary email — read-only */}
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Primary Email
+                    </label>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-border bg-muted/30">
+                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm text-foreground flex-1 truncate">{email || '—'}</span>
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        Primary
+                      </span>
                     </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      This is the email registered to your account and cannot be transferred to another account.
+                    </p>
+                  </div>
 
-                    {emailStatus && <p className="text-sm text-muted-foreground">{emailStatus}</p>}
+                  {/* Divider */}
+                  <div className="border-t border-border" />
 
-                    <Button type="submit" variant="outline" disabled={isSavingEmail}>
-                      {isSavingEmail ? (
-                        <span className="inline-flex items-center gap-2">
-                          <LoaderCircle className="h-4 w-4 animate-spin" />
-                          Updating...
+                  {/* Secondary email */}
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Secondary Email
+                      <span className="ml-2 text-xs text-muted-foreground font-normal">(optional, for authentication)</span>
+                    </label>
+
+                    {/* Show current secondary email */}
+                    {secondaryEmail && secondaryStep === 'idle' && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-border bg-muted/30 mb-3">
+                        <Mail className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-sm text-foreground flex-1 truncate">{secondaryEmail}</span>
+                        <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                          Verified
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-2">
-                          <Mail className="h-4 w-4" />
-                          Update Email
-                        </span>
-                      )}
-                    </Button>
-                  </form>
+                        <button
+                          type="button"
+                          title="Remove secondary email"
+                          onClick={async () => {
+                            try {
+                              await removeSecondaryEmail();
+                              setSecondaryEmail('');
+                            } catch (e) {
+                              setSecondaryStatus(e instanceof Error ? e.message : 'Failed to remove.');
+                              setSecondaryStatusOk(false);
+                            }
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-destructive transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Step: idle — show Add button */}
+                    {secondaryStep === 'idle' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setSecondaryStep('entering'); setSecondaryStatus(''); }}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        {secondaryEmail ? 'Change Secondary Email' : 'Add Secondary Email'}
+                      </Button>
+                    )}
+
+                    {/* Step: entering email */}
+                    {secondaryStep === 'entering' && (
+                      <div className="space-y-3">
+                        <Input
+                          type="email"
+                          placeholder="new@example.com"
+                          value={newSecondaryEmail}
+                          onChange={(e) => setNewSecondaryEmail(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isSecondaryLoading}
+                            onClick={async () => {
+                              setSecondaryStatus('');
+                              setIsSecondaryLoading(true);
+                              try {
+                                await sendSecondaryEmailOtp(newSecondaryEmail);
+                                setSecondaryStep('otp_sent');
+                                setSecondaryStatus('Verification code sent. Check your inbox.');
+                                setSecondaryStatusOk(true);
+                              } catch (e) {
+                                setSecondaryStatus(e instanceof Error ? e.message : 'Failed to send code.');
+                                setSecondaryStatusOk(false);
+                              } finally {
+                                setIsSecondaryLoading(false);
+                              }
+                            }}
+                          >
+                            {isSecondaryLoading
+                              ? <><LoaderCircle className="h-4 w-4 animate-spin mr-2" />Sending…</>
+                              : <><Mail className="h-4 w-4 mr-2" />Send Verification Code</>}
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost"
+                            onClick={() => { setSecondaryStep('idle'); setNewSecondaryEmail(''); setSecondaryStatus(''); }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step: OTP verification */}
+                    {secondaryStep === 'otp_sent' && (
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                          Enter the 6-digit code sent to <strong className="text-foreground">{newSecondaryEmail}</strong>
+                        </p>
+                        {/* OTP digit input */}
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="000000"
+                          value={secondaryOtp}
+                          onChange={(e) => setSecondaryOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          className="tracking-[0.5em] text-center text-xl font-mono w-44"
+                          autoFocus
+                        />
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isSecondaryLoading || secondaryOtp.length !== 6}
+                            onClick={async () => {
+                              setSecondaryStatus('');
+                              setIsSecondaryLoading(true);
+                              try {
+                                await verifyAndSaveSecondaryEmail(newSecondaryEmail, secondaryOtp);
+                                setSecondaryEmail(newSecondaryEmail);
+                                setSecondaryStep('idle');
+                                setNewSecondaryEmail('');
+                                setSecondaryOtp('');
+                                setSecondaryStatus('Secondary email verified and saved!');
+                                setSecondaryStatusOk(true);
+                              } catch (e) {
+                                setSecondaryStatus(e instanceof Error ? e.message : 'Verification failed.');
+                                setSecondaryStatusOk(false);
+                              } finally {
+                                setIsSecondaryLoading(false);
+                              }
+                            }}
+                          >
+                            {isSecondaryLoading
+                              ? <><LoaderCircle className="h-4 w-4 animate-spin mr-2" />Verifying…</>
+                              : <><Check className="h-4 w-4 mr-2" />Verify Code</>}
+                          </Button>
+                          <Button type="button" size="sm" variant="outline"
+                            onClick={async () => {
+                              setSecondaryStatus('');
+                              setIsSecondaryLoading(true);
+                              try {
+                                await sendSecondaryEmailOtp(newSecondaryEmail);
+                                setSecondaryStatus('New code sent.');
+                                setSecondaryStatusOk(true);
+                                setSecondaryOtp('');
+                              } catch (e) {
+                                setSecondaryStatus(e instanceof Error ? e.message : 'Failed.');
+                                setSecondaryStatusOk(false);
+                              } finally {
+                                setIsSecondaryLoading(false);
+                              }
+                            }}
+                            disabled={isSecondaryLoading}
+                          >
+                            Resend Code
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost"
+                            onClick={() => { setSecondaryStep('idle'); setSecondaryOtp(''); setSecondaryStatus(''); }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Status message */}
+                    {secondaryStatus && (
+                      <p className={`mt-2 text-sm flex items-center gap-1.5 ${
+                        secondaryStatusOk ? 'text-green-400' : 'text-destructive'
+                      }`}>
+                        {secondaryStatusOk
+                          ? <Check className="h-3.5 w-3.5" />
+                          : <X className="h-3.5 w-3.5" />}
+                        {secondaryStatus}
+                      </p>
+                    )}
+
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      The same secondary email can be linked to more than one account. A secondary email cannot be used as a primary email on a different account.
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             </>
