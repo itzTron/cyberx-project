@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { Send, Mail, MessageSquare, Bug, Lightbulb, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ const purposes = [
 ];
 
 const Contact = () => {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -84,8 +86,8 @@ const Contact = () => {
               CONTACT
             </span>
             <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              <span className="text-foreground">Get in </span>
-              <span className="text-primary neon-text">Touch</span>
+              <span className="text-foreground">{t('contact.getIn')} </span>
+              <span className="text-primary neon-text">{t('contact.touch')}</span>
             </h1>
             <p className="text-xl text-muted-foreground">
               Have questions, found a bug, or want to collaborate? 
@@ -105,8 +107,8 @@ const Contact = () => {
                   <Mail className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-foreground">Send a Message</h2>
-                  <p className="text-sm text-muted-foreground">Fill out the form below and we'll respond shortly.</p>
+                  <h2 className="text-xl font-bold text-foreground">{t('contact.sendMessage')}</h2>
+                  <p className="text-sm text-muted-foreground">{t('contact.formDescription')}</p>
                 </div>
               </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { GitBranch, GitFork } from 'lucide-react';
 
@@ -45,6 +46,7 @@ const ForkRepositoryButton = ({
   variant = 'outline',
   size = 'sm',
 }: ForkRepositoryButtonProps) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -129,9 +131,9 @@ const ForkRepositoryButton = ({
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Fork Repository</DialogTitle>
+            <DialogTitle>{t('forkRepository.title')}</DialogTitle>
             <DialogDescription>
-              This creates a private fork of <span className="font-medium text-foreground">@{ownerUsername}/{repoName}</span> in your account.
+              {t('forkRepository.descriptionPrefix')} <span className="font-medium text-foreground">@{ownerUsername}/{repoName}</span> in your account.
             </DialogDescription>
           </DialogHeader>
 
@@ -140,9 +142,9 @@ const ForkRepositoryButton = ({
               <label className="flex items-start gap-3 rounded-lg border border-border p-3 cursor-pointer">
                 <RadioGroupItem value="main" id={`fork-main-${repoId}`} className="mt-0.5" />
                 <div className="space-y-1">
-                  <span className="block text-sm font-medium text-foreground">Fork to main branch</span>
+                  <span className="block text-sm font-medium text-foreground">{t('forkRepository.forkToMain')}</span>
                   <span className="block text-xs text-muted-foreground">
-                    Copy the repository into your account and keep the fork on <code>main</code>.
+                    {t('forkRepository.forkToMainDesc')} <code>{t('forkRepository.main')}</code>.
                   </span>
                 </div>
               </label>
@@ -151,15 +153,15 @@ const ForkRepositoryButton = ({
                 <RadioGroupItem value="new_branch" id={`fork-branch-${repoId}`} className="mt-0.5" />
                 <div className="space-y-2 w-full">
                   <div className="space-y-1">
-                    <span className="block text-sm font-medium text-foreground">Fork and create a new branch</span>
+                    <span className="block text-sm font-medium text-foreground">{t('forkRepository.forkAndBranch')}</span>
                     <span className="block text-xs text-muted-foreground">
-                      Copy the repository and create an extra working branch from <code>main</code>.
+                      {t('forkRepository.forkAndBranchDesc')} <code>{t('forkRepository.main')}</code>.
                     </span>
                   </div>
 
                   {forkMode === 'new_branch' && (
                     <div className="space-y-2">
-                      <Label htmlFor={`fork-branch-name-${repoId}`}>Branch name</Label>
+                      <Label htmlFor={`fork-branch-name-${repoId}`}>{t('forkRepository.branchName')}</Label>
                       <div className="relative">
                         <GitBranch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
@@ -179,10 +181,10 @@ const ForkRepositoryButton = ({
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)} disabled={isForking}>
-              Cancel
+              {t('forkRepository.cancel')}
             </Button>
             <Button type="button" onClick={() => void handleFork()} disabled={isForking}>
-              {isForking ? 'Forking...' : 'Create fork'}
+              {isForking ? t('forkRepository.forking') : t('forkRepository.createFork')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, Check, Trash2, UserPlus, X } from 'lucide-react';
@@ -48,6 +49,7 @@ const getNotificationMessage = (notification: HubNotification) => {
 };
 
 const NotificationBell = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<HubNotification[]>([]);
@@ -261,7 +263,7 @@ const NotificationBell = () => {
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-              <span className="text-sm font-semibold text-foreground">Notifications</span>
+              <span className="text-sm font-semibold text-foreground">{t('notificationBell.notifications')}</span>
               <div className="flex items-center gap-1">
                 {unreadCount > 0 && (
                   <button type="button" onClick={() => void handleMarkAllRead()}
@@ -278,11 +280,11 @@ const NotificationBell = () => {
             {/* List */}
             <div className="overflow-y-auto flex-1">
               {isLoading ? (
-                <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>
+                <div className="py-8 text-center text-muted-foreground text-sm">{t('notificationBell.loading')}</div>
               ) : notifications.length === 0 ? (
                 <div className="py-10 text-center">
                   <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">No notifications yet.</p>
+                  <p className="text-sm text-muted-foreground">{t('notificationBell.noNotifications')}</p>
                 </div>
               ) : (
                 notifications.map((n) => (
@@ -321,7 +323,7 @@ const NotificationBell = () => {
       <Dialog open={Boolean(selectedNotification)} onOpenChange={(open) => { if (!open) setSelectedNotification(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Notification actions</DialogTitle>
+            <DialogTitle>{t('notificationBell.notificationActions')}</DialogTitle>
             <DialogDescription>
               {selectedNotification?.message || 'Choose what to do with this notification.'}
             </DialogDescription>
@@ -347,7 +349,7 @@ const NotificationBell = () => {
             <div className="flex flex-wrap gap-2">
               {selectedNotification?.fromProfile?.username && (
                 <Button type="button" variant="outline" onClick={handleOpenNotificationSource} disabled={isManagingNotification}>
-                  View profile
+                  {t('notificationBell.viewProfile')}
                 </Button>
               )}
               <Button
@@ -357,13 +359,13 @@ const NotificationBell = () => {
                 disabled={isManagingNotification || !selectedNotification || selectedNotification.read}
               >
                 <Check className="mr-2 h-4 w-4" />
-                {selectedNotification?.read ? 'Already read' : 'Mark as read'}
+                {selectedNotification?.read ? t('notificationBell.alreadyRead') : t('notificationBell.markAsRead')}
               </Button>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="ghost" onClick={() => setSelectedNotification(null)} disabled={isManagingNotification}>
-                Close
+                {t('notificationBell.close')}
               </Button>
               <Button
                 type="button"

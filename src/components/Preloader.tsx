@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface PreloaderProps {
   onComplete: () => void;
@@ -6,6 +7,7 @@ interface PreloaderProps {
 }
 
 const Preloader = ({ onComplete, minimumDuration = 3000 }: PreloaderProps) => {
+  const { t } = useTranslation();
   const [progress, setProgress] = useState(0);
   const [fadeOut, setFadeOut] = useState(false);
 
@@ -64,7 +66,7 @@ const Preloader = ({ onComplete, minimumDuration = 3000 }: PreloaderProps) => {
 
       {/* Tagline */}
       <div className="preloader-tagline">
-        <span className="preloader-tagline-text">INITIALIZING SYSTEM</span>
+        <span className="preloader-tagline-text">{t('preloader.initializingSystem')}</span>
         <span className="preloader-dots">
           <span>.</span><span>.</span><span>.</span>
         </span>

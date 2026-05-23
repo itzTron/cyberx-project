@@ -1,0 +1,83 @@
+{
+  "branchSelector": {
+    "current": "current",
+    "createNewBranch": "Create New Branch",
+    "createBranchFrom": "Create a new branch from",
+    "cancel": "Cancel",
+    "creating": "Creating...",
+    "createBranch": "Create Branch",
+    "mergeBranch": "Merge Branch",
+    "mergeBranchInto": "Merge a branch into",
+    "merging": "Merging...",
+    "merge": "Merge"
+  },
+  "commitDiffViewer": {
+    "added": "Added",
+    "deleted": "Deleted",
+    "modified": "Modified",
+    "loadingDiff": "Loading diff...",
+    "noChanges": "No changes in this commit.",
+    "onlyChangedLines": "Only changed lines are shown"
+  },
+  "footer": {
+    "brand": "Cyberspace-X 2.0",
+    "quickLinks": "Quick Links",
+    "resources": "Resources",
+    "systemsOperational": "All systems operational"
+  },
+  "forkRepository": {
+    "title": "Fork Repository",
+    "descriptionPrefix": "This creates a private fork of",
+    "forkToMain": "Fork to main branch",
+    "forkToMainDesc": "Copy the repository into your account and keep the fork on",
+    "main": "main",
+    "forkAndBranch": "Fork and create a new branch",
+    "forkAndBranchDesc": "Copy the repository and create an extra working branch from",
+    "branchName": "Branch name",
+    "cancel": "Cancel",
+    "forking": "Forking...",
+    "createFork": "Create fork"
+  },
+  "navbar": {
+    "signedInAs": "Signed in as",
+    "signIn": "Sign In",
+    "signUp": "Sign Up",
+    "yourProfile": "Your Profile",
+    "repository": "Repository",
+    "profileSettings": "Profile Settings",
+    "latestActivity": "Latest Activity",
+    "switchAccount": "Switch Account",
+    "createNewAccount": "Create New Account",
+    "signOut": "Sign Out"
+  },
+  "notificationBell": {
+    "notifications": "Notifications",
+    "loading": "Loading\u2026",
+    "noNotifications": "No notifications yet.",
+    "notificationActions": "Notification actions",
+    "viewProfile": "View profile",
+    "close": "Close",
+    "readAll": "Read all messages",
+    "alreadyRead": "Already read",
+    "markAsRead": "Mark as read",
+    "delete": "Delete"
+  },
+  "preloader": {
+    "initializingSystem": "INITIALIZING SYSTEM"
+  },
+  "contact": {
+    "getIn": "Get in",
+    "touch": "Touch",
+    "sendMessage": "Send a Message",
+    "formDescription": "Fill out the form below and we'll respond shortly.",
+    "sending": "Sending...",
+    "sendMessageBtn": "Send Message"
+  },
+  "breadcrumb": {
+    "more": "More"
+  },
+  "carousel": {
+    "previousSlide": "Previous slide",
+    "nextSlide": "Next slide"
+  }
+}

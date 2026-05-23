@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { GitBranch, GitMerge, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,7 @@ const BranchSelector = ({
   onMergeBranch,
   disabled,
 }: BranchSelectorProps) => {
+  const { t } = useTranslation();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isMergeOpen, setIsMergeOpen] = useState(false);
   const [newBranchName, setNewBranchName] = useState('');
@@ -119,7 +121,7 @@ const BranchSelector = ({
                 <GitBranch className="h-4 w-4 mr-2" />
                 <span className="flex-1 truncate">{branch.name}</span>
                 {branch.name === activeBranch && (
-                  <span className="text-[10px] uppercase text-primary ml-2">current</span>
+                  <span className="text-[10px] uppercase text-primary ml-2">{t('branchSelector.current')}</span>
                 )}
               </DropdownMenuItem>
             ))}
@@ -154,9 +156,9 @@ const BranchSelector = ({
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Branch</DialogTitle>
+            <DialogTitle>{t('branchSelector.createNewBranch')}</DialogTitle>
             <DialogDescription>
-              Create a new branch from <span className="font-medium text-foreground">{activeBranch}</span>.
+              {t('branchSelector.createBranchFrom')} <span className="font-medium text-foreground">{activeBranch}</span>.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -169,9 +171,9 @@ const BranchSelector = ({
             {status && <p className="text-sm text-destructive">{status}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>{t('branchSelector.cancel')}</Button>
             <Button onClick={() => void handleCreate()} disabled={isBusy || !newBranchName.trim()}>
-              {isBusy ? 'Creating...' : 'Create Branch'}
+              {isBusy ? t('branchSelector.creating') : t('branchSelector.createBranch')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -181,9 +183,9 @@ const BranchSelector = ({
       <Dialog open={isMergeOpen} onOpenChange={setIsMergeOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Merge Branch</DialogTitle>
+            <DialogTitle>{t('branchSelector.mergeBranch')}</DialogTitle>
             <DialogDescription>
-              Merge a branch into <span className="font-medium text-foreground">{activeBranch}</span>.
+              {t('branchSelector.mergeBranchInto')} <span className="font-medium text-foreground">{activeBranch}</span>.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -199,9 +201,9 @@ const BranchSelector = ({
             {status && <p className="text-sm text-destructive">{status}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsMergeOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setIsMergeOpen(false)}>{t('branchSelector.cancel')}</Button>
             <Button onClick={() => void handleMerge()} disabled={isBusy || !mergeSource}>
-              {isBusy ? 'Merging...' : 'Merge'}
+              {isBusy ? t('branchSelector.merging') : t('branchSelector.merge')}
             </Button>
           </DialogFooter>
         </DialogContent>

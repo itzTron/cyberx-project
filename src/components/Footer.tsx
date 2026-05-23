@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Shield, Terminal, Github, FileText, Mail, Lock } from 'lucide-react';
 
 const Footer = () => {
+  const { t } = useTranslation();
   return (
     <footer className="border-t border-border bg-card/50 backdrop-blur-xl">
       <div className="container mx-auto px-4 py-12">
@@ -13,7 +15,7 @@ const Footer = () => {
                 <Shield className="w-8 h-8 text-primary" />
                 <Terminal className="w-4 h-4 text-primary absolute -bottom-1 -right-1" />
               </div>
-              <span className="text-xl font-bold font-mono">Cyberspace-X 2.0</span>
+              <span className="text-xl font-bold font-mono">{t('footer.brand')}</span>
             </Link>
             <p className="text-muted-foreground text-sm max-w-md">
               Advanced cybersecurity toolkit designed for security professionals, 
@@ -24,7 +26,7 @@ const Footer = () => {
 
           {/* Quick Links */}
           <div>
-            <h4 className="font-semibold text-foreground mb-4">Quick Links</h4>
+            <h4 className="font-semibold text-foreground mb-4">{t('footer.quickLinks')}</h4>
             <ul className="space-y-2">
               {[
                 { to: '/', label: 'Home' },
@@ -46,7 +48,7 @@ const Footer = () => {
 
           {/* Resources */}
           <div>
-            <h4 className="font-semibold text-foreground mb-4">Resources</h4>
+            <h4 className="font-semibold text-foreground mb-4">{t('footer.resources')}</h4>
             <ul className="space-y-2">
               <li>
                 <a
@@ -96,7 +98,7 @@ const Footer = () => {
           </p>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span>All systems operational</span>
+            <span>{t('footer.systemsOperational')}</span>
           </div>
         </div>
       </div>

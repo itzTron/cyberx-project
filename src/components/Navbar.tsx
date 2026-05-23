@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, ChevronDown, Clock3, FileCode2, FolderGit2, LogOut, Menu, PlusCircle, Repeat, Upload, User, UserPlus, X } from 'lucide-react';
@@ -50,6 +51,7 @@ const getInitials = (name: string) =>
     .toUpperCase();
 
 const Navbar = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -216,7 +218,7 @@ const Navbar = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
                   <div className="px-2 py-2">
-                    <p className="text-xs text-muted-foreground">Signed in as</p>
+                    <p className="text-xs text-muted-foreground">{t('navbar.signedInAs')}</p>
                     <div className="mt-2 flex items-start gap-2">
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={currentUser.avatarUrl || undefined} alt={currentUser.fullName} />
@@ -246,13 +248,13 @@ const Navbar = () => {
                       <User className={`mr-2 h-4 w-4 ${
                         isDropdownItemActive(`/${currentUser.username}`) ? 'text-primary' : ''
                       }`} />
-                      Your Profile
+                      {t('navbar.yourProfile')}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
                       <FolderGit2 className="mr-2 h-4 w-4" />
-                      Repository
+                      {t('navbar.repository')}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="w-56">
                       <DropdownMenuItem asChild>
@@ -291,7 +293,7 @@ const Navbar = () => {
                       <User className={`mr-2 h-4 w-4 ${
                         isDropdownItemActive('/profile') ? 'text-primary' : ''
                       }`} />
-                      Profile Settings
+                      {t('navbar.profileSettings')}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
@@ -304,7 +306,7 @@ const Navbar = () => {
                       <Clock3 className={`mr-2 h-4 w-4 ${
                         isDropdownItemActive('/activity') ? 'text-primary' : ''
                       }`} />
-                      Latest Activity
+                      {t('navbar.latestActivity')}
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -316,7 +318,7 @@ const Navbar = () => {
                     }}
                   >
                     <Repeat className="mr-2 h-4 w-4" />
-                    Switch Account
+                    {t('navbar.switchAccount')}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isSigningOut}
@@ -326,7 +328,7 @@ const Navbar = () => {
                     }}
                   >
                     <UserPlus className="mr-2 h-4 w-4" />
-                    Create New Account
+                    {t('navbar.createNewAccount')}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isSigningOut}
@@ -344,10 +346,10 @@ const Navbar = () => {
             ) : (
               <>
                 <Button asChild variant="outline">
-                  <Link to="/signin">Sign In</Link>
+                  <Link to="/signin">{t('navbar.signIn')}</Link>
                 </Button>
                 <Button asChild variant="default" className="neon-border">
-                  <Link to="/signup">Sign Up</Link>
+                  <Link to="/signup">{t('navbar.signUp')}</Link>
                 </Button>
               </>
             )}
@@ -415,7 +417,7 @@ const Navbar = () => {
                           : 'border-border bg-transparent text-foreground hover:bg-muted/50'
                       }`}
                     >
-                      Your Profile
+                      {t('navbar.yourProfile')}
                     </Link>
                     <Link
                       to="/repository?tab=overview"
@@ -426,7 +428,7 @@ const Navbar = () => {
                           : 'border-border bg-transparent text-foreground hover:bg-muted/50'
                       }`}
                     >
-                      Repository
+                      {t('navbar.repository')}
                     </Link>
                     <Link
                       to="/profile"
@@ -437,7 +439,7 @@ const Navbar = () => {
                           : 'border-border bg-transparent text-foreground hover:bg-muted/50'
                       }`}
                     >
-                      Profile Settings
+                      {t('navbar.profileSettings')}
                     </Link>
                     <Link
                       to="/activity"
@@ -448,7 +450,7 @@ const Navbar = () => {
                           : 'border-border bg-transparent text-foreground hover:bg-muted/50'
                       }`}
                     >
-                      Latest Activity
+                      {t('navbar.latestActivity')}
                     </Link>
                     <Button
                       type="button"
@@ -456,7 +458,7 @@ const Navbar = () => {
                       disabled={isSigningOut}
                       onClick={() => void handleSignOut('/signin')}
                     >
-                      Switch Account
+                      {t('navbar.switchAccount')}
                     </Button>
                     <Button
                       type="button"
@@ -465,7 +467,7 @@ const Navbar = () => {
                       disabled={isSigningOut}
                       onClick={() => void handleSignOut('/signup')}
                     >
-                      Create New Account
+                      {t('navbar.createNewAccount')}
                     </Button>
                   </div>
                 </div>
@@ -473,12 +475,12 @@ const Navbar = () => {
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Button asChild variant="outline">
                     <Link to="/signin" onClick={() => setIsOpen(false)}>
-                      Sign In
+                      {t('navbar.signIn')}
                     </Link>
                   </Button>
                   <Button asChild variant="default" className="neon-border">
                     <Link to="/signup" onClick={() => setIsOpen(false)}>
-                      Sign Up
+                      {t('navbar.signUp')}
                     </Link>
                   </Button>
                 </div>
