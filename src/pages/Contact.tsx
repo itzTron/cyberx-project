@@ -15,7 +15,8 @@ const purposes = [
   { value: 'bug', label: 'Bug Report', icon: Bug },
   { value: 'feature', label: 'Feature Request', icon: Lightbulb },
   { value: 'collaboration', label: 'Collaboration', icon: Users },
-  { value: 'other', label: 'Other', icon: MessageSquare },
+  { value: 'support', label: 'Support', icon: MessageSquare },
+  { value: 'General Inquiry', label: 'General Inquiry', icon: MessageSquare },
 ];
 
 const Contact = () => {
