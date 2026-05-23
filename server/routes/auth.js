@@ -20,7 +20,12 @@ const {
   SMTP_USER,
   SMTP_PASS,
   SMTP_FROM,
+  FRONTEND_ORIGIN,
 } = process.env;
+
+// Derive the frontend base URL (used in email links)
+const FRONTEND_BASE = (FRONTEND_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
+
 
 // ── Supabase Admin client (service role — bypasses RLS) ───────────────────────
 const getAdminClient = () => {
@@ -163,18 +168,78 @@ const buildOtpEmailHtml = (otp) => `
 </html>
 `;
 
+
+// ── Helper: resolve username / secondary-email / primary-email → primary email ─
+/**
+ * Accepts any of: primary email, username, or secondary email.
+ * Returns the resolved primary email string, or throws with a user-friendly message.
+ */
+const resolveIdentifierToEmail = async (identifier) => {
+  const supabase = getAdminClient();
+  const id = identifier.trim().toLowerCase();
+
+  // Already looks like an email — could be primary or secondary
+  if (isValidEmail(id)) {
+    // Check if it matches a primary email directly
+    const { data: listData } = await supabase.auth.admin.listUsers();
+    const byPrimary = (listData?.users || []).find((u) => u.email?.toLowerCase() === id);
+    if (byPrimary) return byPrimary.email.toLowerCase();
+
+    // Otherwise check secondary_email in user_profiles
+    const { data: secProfile } = await supabase
+      .from('user_profiles')
+      .select('id')
+      .eq('secondary_email', id)
+      .maybeSingle();
+    if (secProfile) {
+      // Fetch the primary email for this user
+      const match = (listData?.users || []).find((u) => u.id === secProfile.id);
+      if (match) return match.email.toLowerCase();
+    }
+    // Unknown email
+    return null;
+  }
+
+  // Treat as username — look up user_profiles
+  const { data: profileRow } = await supabase
+    .from('user_profiles')
+    .select('id')
+    .eq('username', id)
+    .maybeSingle();
+  if (!profileRow) return null;
+
+  const { data: listData } = await supabase.auth.admin.listUsers();
+  const match = (listData?.users || []).find((u) => u.id === profileRow.id);
+  return match ? match.email.toLowerCase() : null;
+};
+
 // ── POST /auth/send-otp ───────────────────────────────────────────────────────
 router.post('/send-otp', sendOtpLimiter, async (req, res) => {
   try {
-    const rawEmail = (req.body?.email || '').toString().trim().toLowerCase();
+    // Accept username, secondary email, or primary email
+    const rawIdentifier = (req.body?.email || '').toString().trim();
 
-    if (!isValidEmail(rawEmail)) {
-      return res.status(400).json({ error: 'A valid email address is required.' });
+    if (!rawIdentifier) {
+      return res.status(400).json({ error: 'Email or username is required.' });
     }
 
     if (!SMTP_USER || !SMTP_PASS) {
       console.error('[send-otp] SMTP credentials are not configured.');
       return res.status(500).json({ error: 'Email service is not configured on the server.' });
+    }
+
+    // Resolve identifier to primary email
+    let rawEmail;
+    try {
+      rawEmail = await resolveIdentifierToEmail(rawIdentifier);
+    } catch (resolveErr) {
+      console.error('[send-otp] resolve error:', resolveErr.message);
+      return res.status(500).json({ error: 'Failed to look up account. Please try again.' });
+    }
+
+    if (!rawEmail) {
+      // Don't leak whether username/email exists — generic message
+      return res.status(200).json({ message: 'OTP sent. Check your inbox.' });
     }
 
     const supabase = getAdminClient();
@@ -207,7 +272,7 @@ router.post('/send-otp', sendOtpLimiter, async (req, res) => {
       html: buildOtpEmailHtml(otp),
     });
 
-    console.log(`[send-otp] OTP sent to ${rawEmail}`);
+    console.log(`[send-otp] OTP sent to ${rawEmail} (resolved from: ${rawIdentifier})`);
     return res.status(200).json({ message: 'OTP sent. Check your inbox.' });
   } catch (err) {
     console.error('[send-otp] Unexpected error:', err.message);
@@ -521,4 +586,536 @@ router.post('/secondary-email/verify', verifyOtpLimiter, async (req, res) => {
   }
 });
 
-module.exports = router;
+
+// ── POST /auth/resolve-identifier ────────────────────────────────────────────
+// Resolves a username / secondary email / primary email to a primary email.
+// Used by the frontend password sign-in to support username/secondary-email login.
+router.post('/resolve-identifier', async (req, res) => {
+  try {
+    const identifier = (req.body?.identifier || '').toString().trim();
+    if (!identifier) return res.status(400).json({ error: 'Identifier is required.' });
+
+    const email = await resolveIdentifierToEmail(identifier);
+    if (!email) {
+      // Return null — caller decides the error message
+      return res.status(200).json({ email: null });
+    }
+    return res.status(200).json({ email });
+  } catch (err) {
+    console.error('[resolve-identifier] error:', err.message);
+    return res.status(500).json({ error: 'Failed to resolve identifier.' });
+  }
+});
+
+// ── POST /auth/change-username ────────────────────────────────────────────────
+// Verifies the user's current password, then updates their username.
+// Requires: { userId, currentPassword, newUsername }
+const changeUsernameLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.body?.userId || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many username change attempts. Please wait before trying again.' },
+});
+
+router.post('/change-username', changeUsernameLimiter, async (req, res) => {
+  try {
+    const userId       = (req.body?.userId || '').toString().trim();
+    const newUsername  = (req.body?.newUsername || '').toString().trim().toLowerCase();
+    const currentPassword = (req.body?.currentPassword || '').toString();
+
+    if (!userId)        return res.status(400).json({ error: 'User ID is required.' });
+    if (!currentPassword) return res.status(400).json({ error: 'Current password is required.' });
+
+    // Validate new username format: 3–30 chars, alphanumeric + . - _
+    if (!/^[a-z0-9][a-z0-9._-]{1,28}[a-z0-9]$/.test(newUsername)) {
+      return res.status(400).json({
+        error: 'Username must be 3–30 characters, start and end with a letter or number, and may contain . - _',
+      });
+    }
+
+    const adminSupabase = getAdminClient();
+
+    // 1. Get user's email so we can verify their password
+    const { data: userData, error: userErr } = await adminSupabase.auth.admin.getUserById(userId);
+    if (userErr || !userData?.user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    const userEmail = userData.user.email;
+
+    // 2. Verify password by attempting a sign-in with the anon client
+    // We create a fresh client with the anon key for this
+    const anonKey = process.env.SUPABASE_ANON_KEY || '';
+    if (!anonKey) {
+      return res.status(500).json({ error: 'Server configuration error (missing anon key).' });
+    }
+    const { createClient: createAnonClient } = require('@supabase/supabase-js');
+    const anonClient = createAnonClient(SUPABASE_URL, anonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { error: signInErr } = await anonClient.auth.signInWithPassword({
+      email: userEmail,
+      password: currentPassword,
+    });
+    if (signInErr) {
+      return res.status(401).json({ error: 'Incorrect password. Username was not changed.' });
+    }
+
+    // 3. Check uniqueness
+    const { data: existing } = await adminSupabase
+      .from('user_profiles')
+      .select('id')
+      .eq('username', newUsername)
+      .maybeSingle();
+    if (existing && existing.id !== userId) {
+      return res.status(409).json({ error: 'This username is already taken. Please choose another.' });
+    }
+
+    // 4. Update
+    const { error: updateErr } = await adminSupabase
+      .from('user_profiles')
+      .update({ username: newUsername })
+      .eq('id', userId);
+    if (updateErr) {
+      console.error('[change-username] update error:', updateErr.message);
+      return res.status(500).json({ error: 'Failed to update username. Please try again.' });
+    }
+
+    console.log(`[change-username] User ${userId} changed username to ${newUsername}`);
+    return res.status(200).json({ message: 'Username updated successfully.', username: newUsername });
+  } catch (err) {
+    console.error('[change-username] Unexpected error:', err.message);
+    return res.status(500).json({ error: 'Failed to update username. Please try again.' });
+  }
+});
+
+
+// ── AES-256-GCM helpers for encrypting the pending password ─────────────────
+const getEncryptionKey = () => {
+  if (!JWT_SECRET) throw new Error('JWT_SECRET is not set.');
+  return crypto.scryptSync(JWT_SECRET, 'cyberx-pw-salt', 32);
+};
+
+const encryptPassword = (plaintext) => {
+  const key = getEncryptionKey();
+  const iv  = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString('hex')}.${encrypted.toString('hex')}.${tag.toString('hex')}`;
+};
+
+const decryptPassword = (encryptedText) => {
+  const key = getEncryptionKey();
+  const [ivHex, encHex, tagHex] = encryptedText.split('.');
+  const iv  = Buffer.from(ivHex, 'hex');
+  const enc = Buffer.from(encHex, 'hex');
+  const tag = Buffer.from(tagHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
+};
+
+// ── Email builders ────────────────────────────────────────────────────────────
+const buildPasswordResetEmailHtml = (resetLink) => `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Reset your Cyberspace-X password</title></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="background:#11111a;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:28px 32px;text-align:center;">
+          <p style="margin:0;font-size:11px;letter-spacing:3px;color:#e0e0ff;text-transform:uppercase;font-weight:600;">Cyberspace-X 2.0</p>
+          <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">Password Reset</h1>
+        </td></tr>
+        <tr><td style="padding:36px 32px;text-align:center;">
+          <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">We received a request to reset your Cyberspace-X password.</p>
+          <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">This link expires in <strong style="color:#a78bfa;">1 hour</strong>. If you didn't request this, you can safely ignore it.</p>
+          <a href="${resetLink}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;text-decoration:none;margin-bottom:28px;">Reset Password</a>
+          <p style="margin:0;color:#4b5563;font-size:11px;word-break:break-all;">${resetLink}</p>
+        </td></tr>
+        <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+const buildPasswordConfirmEmailHtml = (confirmLink, disputeLink, userEmail) => `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>Confirm your password change</title></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="background:#11111a;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:28px 32px;text-align:center;">
+          <p style="margin:0;font-size:11px;letter-spacing:3px;color:#e0e0ff;text-transform:uppercase;font-weight:600;">Cyberspace-X 2.0</p>
+          <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">Confirm Password Change</h1>
+        </td></tr>
+        <tr><td style="padding:36px 32px;text-align:center;">
+          <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">A password change was requested for <strong style="color:#a78bfa;">${userEmail}</strong>.</p>
+          <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">Click <strong style="color:#a78bfa;">Yes, this was me</strong> to confirm. The new password will be applied in <strong style="color:#a78bfa;">5 minutes</strong> after confirmation.</p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+            <tr>
+              <td style="padding-right:12px;">
+                <a href="${confirmLink}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">✓ Yes, this was me</a>
+              </td>
+              <td>
+                <a href="${disputeLink}" style="display:inline-block;background:linear-gradient(135deg,#ef4444,#b91c1c);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">✕ Not me — Cancel</a>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:0;color:#6b7280;font-size:12px;">These links expire in 1 hour. If you didn't make this request, click "Not me" immediately.</p>
+        </td></tr>
+        <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+const buildPasswordAppliedEmailHtml = (userEmail) => `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>Password changed successfully</title></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="background:#11111a;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(135deg,#22c55e,#16a34a);padding:28px 32px;text-align:center;">
+          <p style="margin:0;font-size:11px;letter-spacing:3px;color:#d1fae5;text-transform:uppercase;font-weight:600;">Cyberspace-X 2.0</p>
+          <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">✅ Password Changed</h1>
+        </td></tr>
+        <tr><td style="padding:36px 32px;text-align:center;">
+          <p style="margin:0 0 12px;color:#9ca3af;font-size:14px;">Your password for <strong style="color:#a78bfa;">${userEmail}</strong> has been successfully updated.</p>
+          <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">You can now sign in with your new password. If you did not make this change, contact support immediately.</p>
+          <a href="${FRONTEND_BASE}/signin" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Sign In</a>
+        </td></tr>
+        <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+const buildPasswordDisputeEmailHtml = (newRecoveryLink, userEmail) => `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>Password change cancelled</title></head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="background:#11111a;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(135deg,#ef4444,#b91c1c);padding:28px 32px;text-align:center;">
+          <p style="margin:0;font-size:11px;letter-spacing:3px;color:#fee2e2;text-transform:uppercase;font-weight:600;">Cyberspace-X Security Alert</p>
+          <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">⚠️ Change Cancelled</h1>
+        </td></tr>
+        <tr><td style="padding:36px 32px;text-align:center;">
+          <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">The password change for <strong style="color:#f87171;">${userEmail}</strong> has been <strong>cancelled</strong>.</p>
+          <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">Your previous password remains active. If someone else attempted this, use the link below to set a new password immediately.</p>
+          ${newRecoveryLink ? `<a href="${newRecoveryLink}" style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Set New Password Now</a>` : ''}
+        </td></tr>
+        <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+// ── Rate limiter for forgot-password ─────────────────────────────────────────
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => (req.body?.email || req.ip).toLowerCase(),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many password reset requests. Please wait 10 minutes before trying again.' },
+});
+
+// ── POST /auth/forgot-password ────────────────────────────────────────────────
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
+  try {
+    const rawEmail = (req.body?.email || '').toString().trim().toLowerCase();
+    // Always return 200 to avoid email enumeration
+    if (!isValidEmail(rawEmail)) {
+      return res.status(200).json({ message: 'If an account exists for that email, a reset link has been sent.' });
+    }
+    if (!SMTP_USER || !SMTP_PASS) {
+      return res.status(500).json({ error: 'Email service is not configured.' });
+    }
+
+    const supabase = getAdminClient();
+    // Generate recovery link via Supabase Admin
+    const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: rawEmail,
+      options: { redirectTo: `${FRONTEND_BASE}/reset-password` },
+    });
+
+    if (linkErr) {
+      // User may not exist — return generic 200
+      console.warn('[forgot-password] generateLink:', linkErr.message);
+      return res.status(200).json({ message: 'If an account exists for that email, a reset link has been sent.' });
+    }
+
+    const resetLink = linkData?.properties?.action_link || linkData?.properties?.email_otp_link;
+    if (!resetLink) {
+      return res.status(200).json({ message: 'If an account exists for that email, a reset link has been sent.' });
+    }
+
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+      to: rawEmail,
+      subject: 'Reset your Cyberspace-X password',
+      text: `Reset your password: ${resetLink}\n\nThis link expires in 1 hour.`,
+      html: buildPasswordResetEmailHtml(resetLink),
+    });
+
+    console.log(`[forgot-password] Recovery email sent to ${rawEmail}`);
+    return res.status(200).json({ message: 'If an account exists for that email, a reset link has been sent.' });
+  } catch (err) {
+    console.error('[forgot-password] error:', err.message);
+    return res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+  }
+});
+
+// ── POST /auth/reset-password ─────────────────────────────────────────────────
+// Called by the frontend after Supabase session is established on /reset-password.
+// Stores encrypted new password as PENDING (not yet applied), sends confirm email.
+router.post('/reset-password', async (req, res) => {
+  try {
+    const userId      = (req.body?.userId || '').toString().trim();
+    const newPassword = (req.body?.newPassword || '').toString();
+
+    if (!userId)                        return res.status(400).json({ error: 'User ID is required.' });
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+
+    const supabase = getAdminClient();
+    // Verify user exists
+    const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(userId);
+    if (userErr || !userData?.user) return res.status(404).json({ error: 'User not found.' });
+    const userEmail = userData.user.email;
+
+    // Clean up any existing pending change for this user
+    await supabase.from('pending_password_changes').delete().eq('user_id', userId).eq('status', 'pending');
+
+    const encrypted    = encryptPassword(newPassword);
+    const confirmToken = crypto.randomBytes(32).toString('hex');
+    const disputeToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt    = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+    const { error: insertErr } = await supabase.from('pending_password_changes').insert({
+      user_id: userId,
+      user_email: userEmail,
+      encrypted_password: encrypted,
+      confirm_token: confirmToken,
+      dispute_token: disputeToken,
+      expires_at: expiresAt,
+      status: 'pending',
+    });
+
+    if (insertErr) {
+      console.error('[reset-password] insert error:', insertErr.message);
+      return res.status(500).json({ error: 'Failed to store pending change. Please try again.' });
+    }
+
+    // Send confirmation email
+    const confirmLink  = `${FRONTEND_BASE}/password-change-confirm?token=${confirmToken}`;
+    const disputeLink  = `${FRONTEND_BASE}/password-change-dispute?token=${disputeToken}`;
+
+    if (SMTP_USER && SMTP_PASS) {
+      const transporter = createTransporter();
+      await transporter.sendMail({
+        from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+        to: userEmail,
+        subject: 'Confirm your Cyberspace-X password change',
+        text: `Confirm: ${confirmLink}\nDispute (Not me): ${disputeLink}`,
+        html: buildPasswordConfirmEmailHtml(confirmLink, disputeLink, userEmail),
+      });
+    }
+
+    console.log(`[reset-password] Pending change created for user ${userId}`);
+    return res.status(200).json({ message: 'Check your email to confirm the password change.' });
+  } catch (err) {
+    console.error('[reset-password] error:', err.message);
+    return res.status(500).json({ error: 'Failed to process password reset. Please try again.' });
+  }
+});
+
+// ── GET /auth/confirm-password-change ────────────────────────────────────────
+// User clicks "Yes, this was me" link in email.
+router.get('/confirm-password-change', async (req, res) => {
+  try {
+    const token = (req.query?.token || '').toString().trim();
+    if (!token) return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=missing_token`);
+
+    const supabase = getAdminClient();
+    const { data: record, error: fetchErr } = await supabase
+      .from('pending_password_changes')
+      .select('*')
+      .eq('confirm_token', token)
+      .maybeSingle();
+
+    if (fetchErr || !record) {
+      return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=invalid_token`);
+    }
+    if (record.status !== 'pending') {
+      return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=already_used`);
+    }
+    if (new Date() > new Date(record.expires_at)) {
+      await supabase.from('pending_password_changes').update({ status: 'expired' }).eq('id', record.id);
+      return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=expired`);
+    }
+
+    const appliesAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+    await supabase.from('pending_password_changes').update({
+      status: 'confirmed',
+      confirmed_at: new Date().toISOString(),
+      applies_at: appliesAt,
+    }).eq('id', record.id);
+
+    console.log(`[confirm-pw-change] Confirmed for user ${record.user_id}, applies at ${appliesAt}`);
+    return res.redirect(`${FRONTEND_BASE}/password-change-confirm?status=confirmed`);
+  } catch (err) {
+    console.error('[confirm-pw-change] error:', err.message);
+    return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=server_error`);
+  }
+});
+
+// ── GET /auth/dispute-password-change ────────────────────────────────────────
+// User clicks "Not me — Cancel" link in email.
+router.get('/dispute-password-change', async (req, res) => {
+  try {
+    const token = (req.query?.token || '').toString().trim();
+    if (!token) return res.redirect(`${FRONTEND_BASE}/password-change-dispute?error=missing_token`);
+
+    const supabase = getAdminClient();
+    const { data: record, error: fetchErr } = await supabase
+      .from('pending_password_changes')
+      .select('*')
+      .eq('dispute_token', token)
+      .maybeSingle();
+
+    if (fetchErr || !record) {
+      return res.redirect(`${FRONTEND_BASE}/password-change-dispute?error=invalid_token`);
+    }
+    if (!['pending', 'confirmed'].includes(record.status)) {
+      return res.redirect(`${FRONTEND_BASE}/password-change-dispute?error=already_used`);
+    }
+
+    // Cancel the change
+    await supabase.from('pending_password_changes').update({ status: 'disputed' }).eq('id', record.id);
+
+    // Generate a fresh recovery link so the real user can regain control
+    let newRecoveryLink = null;
+    try {
+      const { data: linkData } = await supabase.auth.admin.generateLink({
+        type: 'recovery',
+        email: record.user_email,
+        options: { redirectTo: `${FRONTEND_BASE}/reset-password` },
+      });
+      newRecoveryLink = linkData?.properties?.action_link || null;
+    } catch { /* non-fatal */ }
+
+    // Send security alert email
+    if (SMTP_USER && SMTP_PASS) {
+      const transporter = createTransporter();
+      await transporter.sendMail({
+        from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+        to: record.user_email,
+        subject: '⚠️ Password change cancelled — Cyberspace-X',
+        text: `The password change for your account was cancelled.\n${newRecoveryLink ? `Set a new password: ${newRecoveryLink}` : ''}`,
+        html: buildPasswordDisputeEmailHtml(newRecoveryLink, record.user_email),
+      });
+    }
+
+    console.log(`[dispute-pw-change] Change disputed for user ${record.user_id}`);
+    return res.redirect(`${FRONTEND_BASE}/password-change-dispute?status=cancelled`);
+  } catch (err) {
+    console.error('[dispute-pw-change] error:', err.message);
+    return res.redirect(`${FRONTEND_BASE}/password-change-dispute?error=server_error`);
+  }
+});
+
+// ── Background job: apply confirmed password changes after 5 min ──────────────
+const startPasswordApplyJob = () => {
+  const JOB_INTERVAL_MS = 30 * 1000; // run every 30 seconds
+
+  const applyPending = async () => {
+    try {
+      const supabase = getAdminClient();
+      const now = new Date().toISOString();
+
+      const { data: records } = await supabase
+        .from('pending_password_changes')
+        .select('*')
+        .eq('status', 'confirmed')
+        .lte('applies_at', now);
+
+      if (!records || records.length === 0) return;
+
+      for (const record of records) {
+        try {
+          const plainPassword = decryptPassword(record.encrypted_password);
+
+          const { error: updateErr } = await supabase.auth.admin.updateUserById(record.user_id, {
+            password: plainPassword,
+          });
+
+          if (updateErr) {
+            console.error(`[pw-apply-job] Failed to update password for ${record.user_id}:`, updateErr.message);
+            continue;
+          }
+
+          // Mark applied
+          await supabase.from('pending_password_changes').update({
+            status: 'applied',
+            confirmed_at: record.confirmed_at,
+          }).eq('id', record.id);
+
+          // Send "password successfully changed" email
+          if (SMTP_USER && SMTP_PASS) {
+            const transporter = createTransporter();
+            await transporter.sendMail({
+              from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+              to: record.user_email,
+              subject: '✅ Your Cyberspace-X password has been changed',
+              text: `Your password has been successfully updated. If you didn't do this, contact support.`,
+              html: buildPasswordAppliedEmailHtml(record.user_email),
+            });
+          }
+
+          console.log(`[pw-apply-job] Password applied for user ${record.user_id} (${record.user_email})`);
+        } catch (recordErr) {
+          console.error(`[pw-apply-job] Error processing record ${record.id}:`, recordErr.message);
+        }
+      }
+
+      // Also clean up expired records
+      await supabase
+        .from('pending_password_changes')
+        .update({ status: 'expired' })
+        .eq('status', 'pending')
+        .lt('expires_at', now);
+
+    } catch (jobErr) {
+      console.error('[pw-apply-job] Job error:', jobErr.message);
+    }
+  };
+
+  // Run immediately then every 30s
+  void applyPending();
+  return setInterval(() => void applyPending(), JOB_INTERVAL_MS);
+};
+
+module.exports = { router, startPasswordApplyJob };

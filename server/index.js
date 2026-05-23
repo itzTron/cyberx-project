@@ -8,7 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const authRoutes = require('./routes/auth');
+const { router: authRoutes, startPasswordApplyJob } = require('./routes/auth');
 const contactRoutes = require('./routes/contact');
 const reportRoutes = require('./routes/report');
 const followRoutes = require('./routes/follow');
@@ -167,4 +167,8 @@ app.listen(PORT, () => {
   console.log(`[cyberx-auth] Server running on http://localhost:${PORT}`);
   console.log(`[cyberx-auth] Supabase URL: ${process.env.SUPABASE_URL || '(not set)'}`);
   console.log(`[cyberx-auth] Serving client build: ${hasClientBuild ? 'yes' : 'no'}`);
+
+  // Start background job that applies confirmed password changes after 5 minutes
+  startPasswordApplyJob();
+  console.log('[cyberx-auth] Password apply job started (runs every 30s)');
 });

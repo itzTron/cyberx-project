@@ -370,13 +370,14 @@ export const signInWithGitHub = async (): Promise<void> => {
   }
 };
 
-export const signInUser = async ({ email, password }: SignInPayload): Promise<SignInSuccessResponse> => {
+export const signInUser = async ({ email: identifier, password }: SignInPayload): Promise<SignInSuccessResponse> => {
   const supabase = getAuthClient();
-  const normalizedEmail = normalizeEmail(email);
 
-  if (!normalizedEmail) {
+  const trimmedIdentifier = identifier.trim();
+
+  if (!trimmedIdentifier) {
     throw new AuthApiError({
-      message: 'Email address is required.',
+      message: 'Email or username is required.',
       status: 400,
       code: 'EMAIL_REQUIRED',
       field: 'email',
@@ -391,6 +392,55 @@ export const signInUser = async ({ email, password }: SignInPayload): Promise<Si
       field: 'password',
     });
   }
+
+  // Resolve username / secondary email / primary email → primary email via backend
+  let resolvedEmail: string;
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedIdentifier);
+
+  if (isEmail) {
+    // Might be primary or secondary email — resolve via server
+    try {
+      const apiBase =
+        (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SERVER_URL as string | undefined) ||
+        'http://localhost:3001';
+      const res = await fetch(`${apiBase}/auth/resolve-identifier`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: trimmedIdentifier }),
+      });
+      const body = await res.json().catch(() => ({}));
+      resolvedEmail = body?.email || normalizeEmail(trimmedIdentifier);
+    } catch {
+      // Network error fallback — try with whatever was typed
+      resolvedEmail = normalizeEmail(trimmedIdentifier);
+    }
+  } else {
+    // Treat as username — must resolve via server
+    try {
+      const apiBase =
+        (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SERVER_URL as string | undefined) ||
+        'http://localhost:3001';
+      const res = await fetch(`${apiBase}/auth/resolve-identifier`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: trimmedIdentifier }),
+      });
+      const body = await res.json().catch(() => ({}));
+      resolvedEmail = body?.email || '';
+    } catch {
+      resolvedEmail = '';
+    }
+    if (!resolvedEmail) {
+      throw new AuthApiError({
+        message: 'No account found with that username.',
+        status: 401,
+        code: 'INVALID_CREDENTIALS',
+        field: 'email',
+      });
+    }
+  }
+
+  const normalizedEmail = normalizeEmail(resolvedEmail);
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email: normalizedEmail,
@@ -417,9 +467,7 @@ export const signInUser = async ({ email, password }: SignInPayload): Promise<Si
       userId: data.user.id,
       email: normalizedEmail,
       type: 'sign_in',
-      context: {
-        source: 'web_sign_in',
-      },
+      context: { source: 'web_sign_in' },
     });
   } catch (activityError) {
     console.error('Failed to log sign-in activity:', activityError);

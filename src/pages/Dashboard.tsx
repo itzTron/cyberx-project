@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Clock3,
+  Copy,
   ExternalLink,
   FolderGit2,
   Github,
@@ -135,6 +136,8 @@ const Dashboard = () => {
   const [profileStatusMessage, setProfileStatusMessage] = useState('');
   const [profileReadmeAssetUrls, setProfileReadmeAssetUrls] = useState<Record<string, string>>({});
   const [isProfileReadmeAssetLoading, setIsProfileReadmeAssetLoading] = useState(false);
+  const [usernameCopied, setUsernameCopied] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
   const repoFileListCacheRef = useRef<Record<string, HubRepositoryFile[]>>({});
   const repoFileContentCacheRef = useRef<Record<string, HubRepositoryFile>>({});
 
@@ -402,7 +405,23 @@ const Dashboard = () => {
                       <div className="space-y-3 text-center lg:text-left">
                         <div>
                           <p className="text-2xl font-semibold text-foreground">{user.fullName}</p>
-                          <p className="text-sm text-muted-foreground">@{user.username}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-muted-foreground">@{user.username}</p>
+                            <button
+                              type="button"
+                              title="Copy username"
+                              onClick={() => {
+                                void navigator.clipboard.writeText(user.username);
+                                setUsernameCopied(true);
+                                setTimeout(() => setUsernameCopied(false), 2000);
+                              }}
+                              className="text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              {usernameCopied
+                                ? <span className="text-xs text-primary">Copied!</span>
+                                : <Copy className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
                         </div>
                         <p className="max-w-2xl text-sm text-muted-foreground">
                           {user.bio.trim() || 'Add a bio from Edit Profile to introduce yourself here.'}
@@ -453,7 +472,19 @@ const Dashboard = () => {
                           <Button asChild variant="outline">
                             <Link to="/profile">Edit Profile</Link>
                           </Button>
-                          <p className="text-xs text-primary self-center">{`${window.location.origin}/${user.username}`}</p>
+                          <button
+                            type="button"
+                            title="Copy profile URL"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(`${window.location.origin}/${user.username}`);
+                              setUrlCopied(true);
+                              setTimeout(() => setUrlCopied(false), 2000);
+                            }}
+                            className="inline-flex items-center gap-1.5 text-xs text-primary self-center hover:underline transition-colors"
+                          >
+                            <Copy className="h-3 w-3" />
+                            {urlCopied ? 'Copied!' : `${window.location.origin}/${user.username}`}
+                          </button>
                         </div>
                       </div>
                     </div>

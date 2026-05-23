@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, Check, Eye, EyeOff, Github, LoaderCircle,
+  AlertTriangle, AtSign, Check, Eye, EyeOff, Github, LoaderCircle,
   LockKeyhole, Mail, ShieldCheck, KeyRound, RefreshCw,
 } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
@@ -49,12 +50,15 @@ const SignIn = () => {
   const [resendCooldown, setResendCooldown] = useState(0);
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const normalizedEmail = email.trim().toLowerCase();
-  const hasEmailValue = normalizedEmail.length > 0;
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
-  const showEmailError = hasEmailValue && !isEmailValid && !fieldErrors.email;
+  const trimmedIdentifier = email.trim();
+  const normalizedEmail = trimmedIdentifier.toLowerCase();
+  const hasEmailValue = trimmedIdentifier.length > 0;
+  // Identifier is "valid" for submission if it's non-empty (username or email both allowed)
+  const isEmailValid = hasEmailValue;
+  const showEmailError = false; // no inline format error for username inputs
 
-  const isOtpEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpEmail.trim().toLowerCase());
+  // OTP tab: accepts username or email
+  const isOtpEmailValid = otpEmail.trim().length > 0;
 
   // ── Resend cooldown timer ──────────────────────────────────────────────────
   useEffect(() => {
@@ -167,15 +171,14 @@ const SignIn = () => {
     setSubmitSuccess('');
     setFormError('');
     const nextErrors: { email?: string; password?: string } = {};
-    if (!normalizedEmail) nextErrors.email = 'Email address is required.';
-    else if (!isEmailValid) nextErrors.email = 'Enter a valid email address.';
+    if (!trimmedIdentifier) nextErrors.email = 'Email or username is required.';
     if (!password) nextErrors.password = 'Password is required.';
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
     setFieldErrors({});
     setIsSubmitting(true);
     try {
-      const response = await signInUser({ email: normalizedEmail, password });
+      const response = await signInUser({ email: trimmedIdentifier, password });
       setSubmitSuccess(`${response.message} Logged in as ${response.user.email}.`);
       setEmail('');
       setPassword('');
@@ -208,13 +211,13 @@ const SignIn = () => {
     setOtpEmailError('');
     setOtpSentMsg('');
     setOtpError('');
-    if (!isOtpEmailValid) {
-      setOtpEmailError('Enter a valid email address.');
+    if (!otpEmail.trim()) {
+      setOtpEmailError('Email or username is required.');
       return;
     }
     setIsSendingOtp(true);
     try {
-      const res = await sendOtp(otpEmail.trim().toLowerCase());
+      const res = await sendOtp(otpEmail.trim());
       setOtpSentMsg(res.message);
       setOtpStep('verify');
       setOtp('');
@@ -402,36 +405,35 @@ const SignIn = () => {
               {activeTab === 'password' && (
                 <form className="space-y-5" onSubmit={handleSubmit} noValidate>
                   <div>
-                    <label htmlFor="signin-email" className="block text-sm font-medium text-foreground mb-2">Email</label>
+                    <label htmlFor="signin-email" className="block text-sm font-medium text-foreground mb-2">Email or Username</label>
                     <div className="relative">
                       <Input
                         id="signin-email"
-                        type="email"
+                        type="text"
                         value={email}
                         onChange={(e) => { setEmail(e.target.value); setFieldErrors((c) => ({ ...c, email: undefined })); }}
-                        placeholder="you@company.com"
-                        autoComplete="email"
-                        aria-invalid={Boolean(fieldErrors.email) || showEmailError}
+                        placeholder="you@company.com or your_username"
+                        autoComplete="username"
+                        aria-invalid={Boolean(fieldErrors.email)}
                         className={cn(
                           'bg-muted/50 border-border pr-10',
-                          (fieldErrors.email || showEmailError) && 'border-destructive focus-visible:ring-destructive/40',
-                          isEmailValid && 'border-primary focus-visible:ring-primary/40',
+                          fieldErrors.email && 'border-destructive focus-visible:ring-destructive/40',
+                          trimmedIdentifier.length > 0 && !fieldErrors.email && 'border-primary focus-visible:ring-primary/40',
                         )}
                       />
-                      {isEmailValid && (
+                      {trimmedIdentifier.length > 0 && !fieldErrors.email && (
                         <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-primary">
-                          <Check className="h-4 w-4" />
+                          <AtSign className="h-4 w-4" />
                         </span>
                       )}
                     </div>
                     {fieldErrors.email && <p className="mt-2 text-sm text-destructive">{fieldErrors.email}</p>}
-                    {!fieldErrors.email && showEmailError && <p className="mt-2 text-sm text-destructive">Email ID is not valid.</p>}
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label htmlFor="signin-password" className="block text-sm font-medium text-foreground">Password</label>
-                      <Link to="/contact" className="text-sm text-primary hover:underline">Forgot password?</Link>
+                      <Link to="/forgot-password" className="text-sm text-primary hover:underline">Forgot password?</Link>
                     </div>
                     <div className="relative">
                       <Input
@@ -475,15 +477,15 @@ const SignIn = () => {
                     <>
                       <div>
                         <label htmlFor="otp-email" className="block text-sm font-medium text-foreground mb-2">
-                          Email address
+                          Email or Username
                         </label>
                         <Input
                           id="otp-email"
-                          type="email"
+                          type="text"
                           value={otpEmail}
                           onChange={(e) => { setOtpEmail(e.target.value); setOtpEmailError(''); }}
-                          placeholder="you@gmail.com"
-                          autoComplete="email"
+                          placeholder="you@gmail.com or your_username"
+                          autoComplete="username"
                           className={cn(
                             'bg-muted/50 border-border',
                             otpEmailError && 'border-destructive focus-visible:ring-destructive/40',
@@ -492,7 +494,7 @@ const SignIn = () => {
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSendOtp(); } }}
                         />
                         {otpEmailError && <p className="mt-2 text-sm text-destructive">{otpEmailError}</p>}
-                        <p className="mt-2 text-xs text-muted-foreground">A 6-digit code will be sent to this address.</p>
+                        <p className="mt-2 text-xs text-muted-foreground">A 6-digit code will be sent to your registered email.</p>
                       </div>
                       <Button
                         id="otp-send-button"

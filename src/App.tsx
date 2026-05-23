@@ -22,6 +22,10 @@ import TronAgent from "./pages/TronAgent";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import PublicProfile from "./pages/PublicProfile";
 import NotFound from "./pages/NotFound";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import PasswordChangeConfirm from "./pages/PasswordChangeConfirm";
+import PasswordChangeDispute from "./pages/PasswordChangeDispute";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +63,10 @@ const App = () => {
             <Route path="/tron" element={<TronAgent />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/u/:username" element={<PublicProfile />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/password-change-confirm" element={<PasswordChangeConfirm />} />
+            <Route path="/password-change-dispute" element={<PasswordChangeDispute />} />
             <Route path="/:username" element={<Dashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

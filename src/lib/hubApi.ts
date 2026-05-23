@@ -1459,6 +1459,30 @@ export const getSecondaryEmail = async (): Promise<string> => {
   return (data as any)?.secondary_email || '';
 };
 
+/**
+ * Change the authenticated user's username after verifying their current password.
+ * Returns the new username on success.
+ */
+export const changeUsername = async (newUsername: string, currentPassword: string): Promise<string> => {
+  const { user } = await ensureAuthenticatedUser();
+  const serverUrl =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SERVER_URL as string | undefined) ||
+    'http://localhost:3001';
+
+  const res = await fetch(`${serverUrl}/auth/change-username`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: user.id,
+      newUsername: newUsername.trim().toLowerCase(),
+      currentPassword,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || 'Failed to change username.');
+  return body.username as string;
+};
+
 /** Send a 6-digit OTP to `email` via the backend for secondary-email verification. */
 export const sendSecondaryEmailOtp = async (email: string): Promise<void> => {
   const { user } = await ensureAuthenticatedUser();

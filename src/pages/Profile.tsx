@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Camera, Check, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Lock, Mail, MapPin, Navigation2, Phone, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { Camera, Check, Copy, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Lock, Mail, MapPin, Navigation2, Phone, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
 
 import Footer from '@/components/Footer';
@@ -26,6 +26,7 @@ import {
   sendSecondaryEmailOtp,
   verifyAndSaveSecondaryEmail,
   removeSecondaryEmail,
+  changeUsername,
   type HubUserProfile,
 } from '@/lib/hubApi';
 import { loadGoogleMapsApi } from '@/lib/googleMaps';
@@ -126,6 +127,15 @@ const Profile = () => {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [savedAvatarUrl, setSavedAvatarUrl] = useState('');
   const [email, setEmail] = useState('');
+  // ── Username change state
+  const [currentUsername, setCurrentUsername] = useState('');
+  const [usernameCopied, setUsernameCopied] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [usernamePassword, setUsernamePassword] = useState('');
+  const [showUsernamePassword, setShowUsernamePassword] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState('');
+  const [usernameStatusOk, setUsernameStatusOk] = useState(false);
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
   const [secondaryEmail, setSecondaryEmail] = useState('');
   const [newSecondaryEmail, setNewSecondaryEmail] = useState('');
   const [secondaryOtp, setSecondaryOtp] = useState('');
@@ -171,6 +181,7 @@ const Profile = () => {
     setAvatarUrl(data.avatarUrl);
     setSavedAvatarUrl(data.avatarUrl);
     setEmail(data.email);
+    setCurrentUsername(data.username);
     // Load secondary email
     getSecondaryEmail().then((v) => setSecondaryEmail(v)).catch(() => {});
   };
@@ -654,7 +665,23 @@ const Profile = () => {
                         <div className="space-y-2">
                           <div>
                             <p className="text-2xl font-semibold text-foreground">{fullName || 'Your name'}</p>
-                            <p className="text-sm text-muted-foreground">@{profile.username}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm text-muted-foreground">@{profile.username}</p>
+                              <button
+                                type="button"
+                                title="Copy username"
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(profile.username);
+                                  setUsernameCopied(true);
+                                  setTimeout(() => setUsernameCopied(false), 2000);
+                                }}
+                                className="text-muted-foreground hover:text-primary transition-colors"
+                              >
+                                {usernameCopied
+                                  ? <span className="text-xs text-primary">Copied!</span>
+                                  : <Copy className="h-3.5 w-3.5" />}
+                              </button>
+                            </div>
                           </div>
                           <p className="max-w-xl text-sm text-muted-foreground">
                             {bio.trim() || 'Add a bio to tell people about your work.'}
@@ -1244,6 +1271,136 @@ const Profile = () => {
                       The same secondary email can be linked to more than one account. A secondary email cannot be used as a primary email on a different account.
                     </p>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* ── Change Username Card ──────────────────────────────────── */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Username</CardTitle>
+                  <CardDescription>
+                    Change your public username. Your username must be unique and 3–30 characters. You'll need your account password to confirm the change.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  {/* Current username display */}
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Current Username</label>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-border bg-muted/30">
+                      <span className="text-sm text-muted-foreground">@</span>
+                      <span className="text-sm text-foreground flex-1">{currentUsername || profile?.username || '—'}</span>
+                      <button
+                        type="button"
+                        title="Copy username"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(currentUsername || profile?.username || '');
+                          setUsernameCopied(true);
+                          setTimeout(() => setUsernameCopied(false), 2000);
+                        }}
+                        className="p-1 rounded text-muted-foreground hover:text-primary transition-colors"
+                      >
+                        {usernameCopied
+                          ? <span className="text-xs text-primary">Copied!</span>
+                          : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border" />
+
+                  {/* New username input */}
+                  <div>
+                    <label htmlFor="new-username" className="block text-sm font-medium text-foreground mb-2">
+                      New Username
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-3 flex items-center text-muted-foreground text-sm pointer-events-none">@</span>
+                      <Input
+                        id="new-username"
+                        type="text"
+                        value={newUsername}
+                        onChange={(e) => {
+                          setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''));
+                          setUsernameStatus('');
+                        }}
+                        placeholder="new_username"
+                        className="pl-8"
+                        maxLength={30}
+                      />
+                    </div>
+                    {/* Live format feedback */}
+                    {newUsername && (
+                      (() => {
+                        const valid = /^[a-z0-9][a-z0-9._-]{1,28}[a-z0-9]$/.test(newUsername);
+                        return (
+                          <p className={`mt-1.5 text-xs ${valid ? 'text-green-400' : 'text-muted-foreground'}`}>
+                            {valid
+                              ? '✓ Valid username format'
+                              : '3–30 chars, start & end with letter/number, may contain . - _'}
+                          </p>
+                        );
+                      })()
+                    )}
+                  </div>
+
+                  {/* Password confirmation */}
+                  <div>
+                    <label htmlFor="username-password" className="block text-sm font-medium text-foreground mb-2">
+                      Confirm with Password
+                    </label>
+                    <div className="relative">
+                      <Input
+                        id="username-password"
+                        type={showUsernamePassword ? 'text' : 'password'}
+                        value={usernamePassword}
+                        onChange={(e) => setUsernamePassword(e.target.value)}
+                        placeholder="Your account password"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowUsernamePassword((v) => !v)}
+                        className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-foreground"
+                      >
+                        {showUsernamePassword ? <X className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  {usernameStatus && (
+                    <p className={`text-sm flex items-center gap-1.5 ${usernameStatusOk ? 'text-green-400' : 'text-destructive'}`}>
+                      {usernameStatusOk ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                      {usernameStatus}
+                    </p>
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isSavingUsername || !newUsername || !usernamePassword}
+                    onClick={async () => {
+                      setUsernameStatus('');
+                      setIsSavingUsername(true);
+                      try {
+                        const saved = await changeUsername(newUsername, usernamePassword);
+                        setCurrentUsername(saved);
+                        setNewUsername('');
+                        setUsernamePassword('');
+                        setUsernameStatus('Username changed successfully!');
+                        setUsernameStatusOk(true);
+                      } catch (e) {
+                        setUsernameStatus(e instanceof Error ? e.message : 'Failed to change username.');
+                        setUsernameStatusOk(false);
+                      } finally {
+                        setIsSavingUsername(false);
+                      }
+                    }}
+                  >
+                    {isSavingUsername
+                      ? <><LoaderCircle className="h-4 w-4 animate-spin mr-2" />Saving…</>
+                      : <><Save className="h-4 w-4 mr-2" />Change Username</>}
+                  </Button>
                 </CardContent>
               </Card>
             </>
