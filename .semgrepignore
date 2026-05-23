@@ -1,0 +1,7 @@
+# Exclude third-party modules and build outputs from Semgrep scans
+node_modules/
+dist/
+build/
+.netlify/
+.vscode/
+server/node_modules/

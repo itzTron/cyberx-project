@@ -1,0 +1,6 @@
+# Exclude third-party modules and build outputs from legacy ESLint scans
+node_modules/
+dist/
+build/
+.netlify/
+server/node_modules/
