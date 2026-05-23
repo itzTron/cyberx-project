@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: cyberx-auth-server
+    runtime: node
+    region: singapore
+    plan: free
+    rootDir: server
+    buildCommand: npm install --omit=dev
+    startCommand: node index.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: TRUST_PROXY
+        value: "1"
+      - key: FRONTEND_ORIGIN
+        value: https://delicate-shortbread-22062c.netlify.app
+      - key: SUPABASE_URL
+        value: https://mzgtfgtejmvozeifyrak.supabase.co
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: tanmoyn681@gmail.com
+      - key: SMTP_FROM
+        value: "Cyberspace-X <tanmoyn681@gmail.com>"
+      - key: OWNER_EMAIL
+        value: tanmoyn681@gmail.com
+      # Secrets — set these manually in the Render dashboard after deploy
+      # SUPABASE_SERVICE_ROLE_KEY
+      # SUPABASE_ANON_KEY
+      # JWT_SECRET
+      # SMTP_PASS
