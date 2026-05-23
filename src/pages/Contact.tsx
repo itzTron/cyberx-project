@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { motion } from 'framer-motion';
 import { Send, Mail, MessageSquare, Bug, Lightbulb, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';

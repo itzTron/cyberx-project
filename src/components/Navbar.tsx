@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, ChevronDown, Clock3, FileCode2, FolderGit2, LogOut, Menu, PlusCircle, Repeat, Upload, User, UserPlus, X } from 'lucide-react';

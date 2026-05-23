@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/i18n';
 import { useNavigate } from 'react-router-dom';
 import { GitBranch, GitFork } from 'lucide-react';
 
