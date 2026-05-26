@@ -283,7 +283,8 @@ const resolveIdentifierToEmail = async (identifier) => {
 // ── POST /auth/send-otp ───────────────────────────────────────────────────────
 router.post('/send-otp', sendOtpLimiter, async (req, res) => {
   try {
-    // Accept username, secondary email, or primary email
+    const purpose = (req.body?.purpose || 'signin').toString().trim().toLowerCase();
+    const isSignupPurpose = purpose === 'signup';
     const rawIdentifier = (req.body?.email || '').toString().trim();
 
     if (!rawIdentifier) {
@@ -295,25 +296,65 @@ router.post('/send-otp', sendOtpLimiter, async (req, res) => {
       return res.status(500).json({ error: 'Email service is not configured on the server.' });
     }
 
-    // Resolve identifier to primary email
-    let rawEmail;
-    try {
-      rawEmail = await resolveIdentifierToEmail(rawIdentifier);
-    } catch (resolveErr) {
-      console.error('[send-otp] resolve error:', resolveErr.message);
-      return res.status(500).json({ error: 'Failed to look up account. Please try again.' });
-    }
-
-    if (!rawEmail) {
-      // Don't leak whether username/email exists — generic message
-      return res.status(200).json({ message: 'OTP sent. Check your inbox.' });
-    }
-
     const supabase = getAdminClient();
+    let rawEmail = '';
+
+    if (isSignupPurpose) {
+      if (!isValidEmail(rawIdentifier)) {
+        return res.status(400).json({ error: 'A valid email address is required.' });
+      }
+
+      rawEmail = rawIdentifier.toLowerCase();
+
+      const { data: listData, error: listError } = await supabase.auth.admin.listUsers();
+      if (listError) {
+        console.error('[send-otp] listUsers error:', listError.message);
+        return res.status(500).json({ error: 'Failed to look up account. Please try again.' });
+      }
+
+      const existingUser = (listData?.users || []).find(
+        (user) => user.email?.toLowerCase() === rawEmail,
+      );
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'This email is already registered. Try signing in or use a different email address.',
+          code: 'EMAIL_ALREADY_REGISTERED',
+        });
+      }
+
+      const { data: secondaryProfile, error: secondaryLookupError } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('secondary_email', rawEmail)
+        .maybeSingle();
+
+      if (secondaryLookupError) {
+        console.error('[send-otp] secondary email lookup error:', secondaryLookupError.message);
+        return res.status(500).json({ error: 'Failed to look up account. Please try again.' });
+      }
+
+      if (secondaryProfile) {
+        return res.status(409).json({
+          error: 'This email is already linked to another account. Use a different email address.',
+          code: 'EMAIL_ALREADY_REGISTERED',
+        });
+      }
+    } else {
+      try {
+        rawEmail = await resolveIdentifierToEmail(rawIdentifier);
+      } catch (resolveErr) {
+        console.error('[send-otp] resolve error:', resolveErr.message);
+        return res.status(500).json({ error: 'Failed to look up account. Please try again.' });
+      }
+
+      if (!rawEmail) {
+        return res.status(200).json({ message: 'OTP sent. Check your inbox.' });
+      }
+    }
+
     const otp = generateOtp();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString();
 
-    // Upsert — if the email already has a pending OTP, overwrite it
     const { error: dbError } = await supabase.from('otp_tokens').upsert(
       {
         email: rawEmail,
@@ -329,17 +370,23 @@ router.post('/send-otp', sendOtpLimiter, async (req, res) => {
       return res.status(500).json({ error: 'Failed to store OTP. Please try again.' });
     }
 
-    // Send email
     const transporter = createTransporter();
     await transporter.sendMail({
       from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
       to: rawEmail,
-      subject: `Your Cyberspace-X sign-in code: ${otp}`,
+      subject: isSignupPurpose
+        ? `Your Cyberspace-X signup code: ${otp}`
+        : `Your Cyberspace-X sign-in code: ${otp}`,
       text: `Your one-time passcode is: ${otp}\n\nThis code expires in ${OTP_EXPIRY_MINUTES} minutes.\n\nIf you did not request this, please ignore this email.`,
-      html: buildOtpEmailHtml(otp),
+      html: buildOtpEmailHtml(otp).replace(
+        'Use the code below to sign in to your account.',
+        isSignupPurpose
+          ? 'Use the code below to verify your email address for your Cyberspace-X signup.'
+          : 'Use the code below to sign in to your account.',
+      ),
     });
 
-    console.log(`[send-otp] OTP sent to ${rawEmail} (resolved from: ${rawIdentifier})`);
+    console.log(`[send-otp] OTP sent to ${rawEmail} (purpose: ${purpose}, requested as: ${rawIdentifier})`);
     return res.status(200).json({ message: 'OTP sent. Check your inbox.' });
   } catch (err) {
     console.error('[send-otp] Unexpected error:', err.message);
@@ -350,6 +397,8 @@ router.post('/send-otp', sendOtpLimiter, async (req, res) => {
 // ── POST /auth/verify-otp ─────────────────────────────────────────────────────
 router.post('/verify-otp', verifyOtpLimiter, async (req, res) => {
   try {
+    const purpose = (req.body?.purpose || 'signin').toString().trim().toLowerCase();
+    const isSignupPurpose = purpose === 'signup';
     const rawEmail = (req.body?.email || '').toString().trim().toLowerCase();
     const submittedOtp = (req.body?.otp || '').toString().trim();
 
@@ -423,6 +472,14 @@ router.post('/verify-otp', verifyOtpLimiter, async (req, res) => {
 
     // ── OTP is valid — delete record immediately (one-time use) ──────────────
     await supabase.from('otp_tokens').delete().eq('email', rawEmail);
+
+    if (isSignupPurpose) {
+      return res.status(200).json({
+        verified: true,
+        email: rawEmail,
+        message: 'Email verified successfully.',
+      });
+    }
 
     // ── Fetch or create user via Supabase Admin API ───────────────────────────
     let userId;

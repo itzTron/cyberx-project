@@ -12,7 +12,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import { cn } from '@/lib/utils';
 import { getSupportedEmailDomains, validateSignUpEmail } from '@/lib/emailValidation';
 import { AuthApiError, signUpUser } from '@/lib/authApi';
-import { OtpApiError, sendOtp, verifyOtp } from '@/lib/otpApi';
+import { OtpApiError, sendSignupOtp, verifySignupOtp } from '@/lib/otpApi';
 import { signInWithGitHub } from '@/lib/authApi';
 
 import Footer from '@/components/Footer';
@@ -82,7 +82,7 @@ const SignUp = () => {
     setOtpError(''); setOtpSentMsg(''); setIsSendingOtp(true);
     setEmailVerifyStep('sending');
     try {
-      const res = await sendOtp(email.trim().toLowerCase());
+      const res = await sendSignupOtp(email.trim().toLowerCase());
       setOtpSentMsg(res.message);
       setEmailVerifyStep('otp');
       setOtp('');
@@ -100,7 +100,7 @@ const SignUp = () => {
     if (resendCooldown > 0) return;
     setOtpError(''); setOtpSentMsg(''); setIsSendingOtp(true);
     try {
-      const res = await sendOtp(email.trim().toLowerCase());
+      const res = await sendSignupOtp(email.trim().toLowerCase());
       setOtpSentMsg(res.message); setOtp(''); setOtpAttemptsLeft(null); setResendCooldown(60);
     } catch (err) {
       setOtpError(err instanceof OtpApiError ? err.message : 'Failed to resend OTP.');
@@ -112,7 +112,7 @@ const SignUp = () => {
     if (otp.length !== 6) { setOtpError('Enter the 6-digit code.'); return; }
     setOtpError(''); setIsVerifyingOtp(true);
     try {
-      await verifyOtp(email.trim().toLowerCase(), otp);
+      await verifySignupOtp(email.trim().toLowerCase(), otp);
       setEmailVerifyStep('verified');
       setOtpError('');
     } catch (err) {

@@ -23,6 +23,12 @@ export type SendOtpResponse = {
   message: string;
 };
 
+export type VerifySignupOtpResponse = {
+  verified: true;
+  email: string;
+  message: string;
+};
+
 export type VerifyOtpResponse = {
   token: string;
   supabase_token_hash: string | null;
@@ -152,6 +158,9 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
 export const sendOtp = (email: string): Promise<SendOtpResponse> =>
   post<SendOtpResponse>('/auth/send-otp', { email });
 
+export const sendSignupOtp = (email: string): Promise<SendOtpResponse> =>
+  post<SendOtpResponse>('/auth/send-otp', { email, purpose: 'signup' });
+
 /**
  * Verify the OTP for `email`.
  * On success, automatically stores the JWT in localStorage.
@@ -163,3 +172,6 @@ export const verifyOtp = async (email: string, otp: string): Promise<VerifyOtpRe
   storeOtpJwt(result.token);
   return result;
 };
+
+export const verifySignupOtp = (email: string, otp: string): Promise<VerifySignupOtpResponse> =>
+  post<VerifySignupOtpResponse>('/auth/verify-otp', { email, otp, purpose: 'signup' });
