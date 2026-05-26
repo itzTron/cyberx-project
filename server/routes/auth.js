@@ -33,6 +33,66 @@ const getRequestBase = (req) => {
   return `${protocol}://${host}`.replace(/\/$/, '');
 };
 
+const getBearerToken = (req) => {
+  const authHeader = req.get('authorization') || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return '';
+  }
+  return authHeader.slice(7).trim();
+};
+
+const getAuthenticatedSessionUser = async (req) => {
+  const accessToken = getBearerToken(req);
+  if (!accessToken) {
+    const error = new Error('Missing or malformed Authorization header.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const supabase = getAdminClient();
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data?.user) {
+    const authError = new Error('Invalid or expired session. Please sign in again.');
+    authError.statusCode = 401;
+    throw authError;
+  }
+
+  return {
+    supabase,
+    user: data.user,
+  };
+};
+
+const cleanupAccountArtifacts = async ({
+  supabase,
+  userId,
+  primaryEmail,
+  secondaryEmail,
+}) => {
+  const normalizedPrimaryEmail = (primaryEmail || '').trim().toLowerCase();
+  const normalizedSecondaryEmail = (secondaryEmail || '').trim().toLowerCase();
+  const secondaryOtpPrefix = `secondary:${userId}:`;
+
+  await Promise.allSettled([
+    supabase.from('notifications').delete().eq('from_user_id', userId),
+    supabase.from('activity_logs').delete().eq('user_id', userId),
+    normalizedPrimaryEmail
+      ? supabase.from('activity_logs').delete().eq('email', normalizedPrimaryEmail)
+      : Promise.resolve(),
+    supabase.from('pending_password_changes').delete().eq('user_id', userId),
+    normalizedPrimaryEmail
+      ? supabase.from('pending_password_changes').delete().eq('user_email', normalizedPrimaryEmail)
+      : Promise.resolve(),
+    normalizedPrimaryEmail
+      ? supabase.from('otp_tokens').delete().eq('email', normalizedPrimaryEmail)
+      : Promise.resolve(),
+    normalizedSecondaryEmail
+      ? supabase.from('otp_tokens').delete().eq('email', normalizedSecondaryEmail)
+      : Promise.resolve(),
+    supabase.from('otp_tokens').delete().like('email', `${secondaryOtpPrefix}%`),
+  ]);
+};
+
 
 // ── Supabase Admin client (service role — bypasses RLS) ───────────────────────
 const getAdminClient = () => {
@@ -699,6 +759,145 @@ router.post('/change-username', changeUsernameLimiter, async (req, res) => {
 
 
 // ── AES-256-GCM helpers for encrypting the pending password ─────────────────
+const accountLifecycleLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => getBearerToken(req) || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many account management requests. Please wait and try again.' },
+});
+
+router.post('/account/disable', accountLifecycleLimiter, async (req, res) => {
+  try {
+    const { supabase, user } = await getAuthenticatedSessionUser(req);
+    const disabledAt = new Date().toISOString();
+
+    const { error: updateErr } = await supabase
+      .from('user_profiles')
+      .update({
+        account_status: 'disabled',
+        account_disabled_at: disabledAt,
+      })
+      .eq('id', user.id);
+
+    if (updateErr) {
+      console.error('[account/disable] profile update error:', updateErr.message);
+      return res.status(500).json({ error: 'Failed to disable account. Please try again.' });
+    }
+
+    await Promise.allSettled([
+      supabase.from('pending_password_changes').delete().eq('user_id', user.id),
+      supabase.from('otp_tokens').delete().like('email', `secondary:${user.id}:%`),
+      supabase.from('activity_logs').insert({
+        user_id: user.id,
+        email: (user.email || '').trim().toLowerCase(),
+        activity_type: 'account_disabled',
+        activity_context: { source: 'profile_settings' },
+      }),
+    ]);
+
+    return res.status(200).json({ message: 'Account disabled successfully.' });
+  } catch (err) {
+    console.error('[account/disable] error:', err.message);
+    return res.status(err.statusCode || 500).json({
+      error: err.statusCode === 401 ? err.message : 'Failed to disable account. Please try again.',
+    });
+  }
+});
+
+router.post('/account/reactivate', accountLifecycleLimiter, async (req, res) => {
+  try {
+    const { supabase, user } = await getAuthenticatedSessionUser(req);
+
+    const { data: profile, error: fetchErr } = await supabase
+      .from('user_profiles')
+      .select('username')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('[account/reactivate] profile fetch error:', fetchErr.message);
+      return res.status(500).json({ error: 'Failed to reactivate account. Please try again.' });
+    }
+
+    const { error: updateErr } = await supabase
+      .from('user_profiles')
+      .update({
+        account_status: 'active',
+        account_disabled_at: null,
+      })
+      .eq('id', user.id);
+
+    if (updateErr) {
+      console.error('[account/reactivate] profile update error:', updateErr.message);
+      return res.status(500).json({ error: 'Failed to reactivate account. Please try again.' });
+    }
+
+    await Promise.allSettled([
+      supabase.from('activity_logs').insert({
+        user_id: user.id,
+        email: (user.email || '').trim().toLowerCase(),
+        activity_type: 'account_reactivated',
+        activity_context: { source: 'sign_in' },
+      }),
+    ]);
+
+    return res.status(200).json({
+      message: 'Account reactivated successfully.',
+      username: (profile?.username || '').toString().trim(),
+    });
+  } catch (err) {
+    console.error('[account/reactivate] error:', err.message);
+    return res.status(err.statusCode || 500).json({
+      error: err.statusCode === 401 ? err.message : 'Failed to reactivate account. Please try again.',
+    });
+  }
+});
+
+router.post('/account/delete', accountLifecycleLimiter, async (req, res) => {
+  try {
+    const confirmation = (req.body?.confirmation || '').toString().trim().toUpperCase();
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ error: 'Type DELETE to permanently remove your account.' });
+    }
+
+    const { supabase, user } = await getAuthenticatedSessionUser(req);
+    const normalizedPrimaryEmail = (user.email || '').trim().toLowerCase();
+
+    const { data: profile, error: profileErr } = await supabase
+      .from('user_profiles')
+      .select('secondary_email')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      console.error('[account/delete] profile fetch error:', profileErr.message);
+      return res.status(500).json({ error: 'Failed to prepare account deletion. Please try again.' });
+    }
+
+    await cleanupAccountArtifacts({
+      supabase,
+      userId: user.id,
+      primaryEmail: normalizedPrimaryEmail,
+      secondaryEmail: profile?.secondary_email || '',
+    });
+
+    const { error: deleteErr } = await supabase.auth.admin.deleteUser(user.id, false);
+    if (deleteErr) {
+      console.error('[account/delete] auth delete error:', deleteErr.message);
+      return res.status(500).json({ error: 'Failed to permanently delete account. Please try again.' });
+    }
+
+    return res.status(200).json({ message: 'Account deleted permanently.' });
+  } catch (err) {
+    console.error('[account/delete] error:', err.message);
+    return res.status(err.statusCode || 500).json({
+      error: err.statusCode === 401 ? err.message : 'Failed to permanently delete account. Please try again.',
+    });
+  }
+});
+
 const getEncryptionKey = () => {
   if (!JWT_SECRET) throw new Error('JWT_SECRET is not set.');
   return crypto.scryptSync(JWT_SECRET, 'cyberx-pw-salt', 32);

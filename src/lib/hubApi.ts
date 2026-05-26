@@ -1,4 +1,6 @@
 import { getSupabaseClient } from '@/lib/supabase';
+import { API_BASE_URL } from '@/lib/apiBaseUrl';
+import { clearOtpJwt } from '@/lib/otpApi';
 import {
   clearGitHubToken,
   fetchGitHubRepoBlob,
@@ -71,6 +73,8 @@ export type HubActivityLog = {
   created_at: string;
 };
 
+export type HubAccountStatus = 'active' | 'disabled';
+
 export type HubUserProfile = {
   id: string;
   email: string;
@@ -87,6 +91,8 @@ export type HubUserProfile = {
   locationLat: number | null;
   locationLng: number | null;
   avatarUrl: string;
+  accountStatus: HubAccountStatus;
+  accountDisabledAt: string | null;
 };
 
 export type PublicUserProfile = {
@@ -177,15 +183,16 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_GITHUB_IMPORT_FILES = 2000;
 const GITHUB_BLOB_FETCH_BATCH_SIZE = 8;
 const PROFILE_SELECT_COLUMNS_BASE = 'id, email, full_name, username, profile_readme, bio, phone_number, avatar_url';
-const PROFILE_SELECT_COLUMNS_WITH_SOCIAL = `${PROFILE_SELECT_COLUMNS_BASE}, address, linkedin_url, github_url, website_url`;
-const PROFILE_SELECT_COLUMNS_WITH_LOCATION = `${PROFILE_SELECT_COLUMNS_BASE}, location_label, location_lat, location_lng`;
-const PROFILE_SELECT_COLUMNS_WITH_SOCIAL_AND_LOCATION = `${PROFILE_SELECT_COLUMNS_WITH_SOCIAL}, location_label, location_lat, location_lng`;
+const PROFILE_SOCIAL_COLUMNS = 'address, linkedin_url, github_url, website_url';
+const PROFILE_LOCATION_COLUMNS = 'location_label, location_lat, location_lng';
+const PROFILE_ACCOUNT_LIFECYCLE_COLUMNS = 'account_status, account_disabled_at';
 const REPOSITORY_SELECT_COLUMNS_BASE = 'id, owner_id, name, slug, description, visibility, readme_md, archived_at, created_at, updated_at';
 const REPOSITORY_SELECT_COLUMNS_WITH_TOOL_LIST = `${REPOSITORY_SELECT_COLUMNS_BASE}, show_in_tool_list`;
 const DEFAULT_PROFILE_REPOSITORY_DESCRIPTION = 'Default profile repository for dashboard README.';
 let repositoriesHasToolListColumnCache: boolean | null = null;
 let profileHasSocialColumnsCache: boolean | null = null;
 let profileHasLocationColumnsCache: boolean | null = null;
+let profileHasAccountLifecycleColumnsCache: boolean | null = null;
 
 const extensionLanguageMap: Record<string, string> = {
   ts: 'typescript',
@@ -468,26 +475,49 @@ const hasProfileLocationColumns = async (supabase: any, forceRefresh = false) =>
   return true;
 };
 
+const hasProfileAccountLifecycleColumns = async (supabase: any, forceRefresh = false) => {
+  if (!forceRefresh && profileHasAccountLifecycleColumnsCache !== null) {
+    return profileHasAccountLifecycleColumnsCache;
+  }
+
+  const { error } = await supabase.from('user_profiles').select('account_status' as any).limit(1);
+  if (error) {
+    if (isMissingColumnError(error, 'account_status')) {
+      profileHasAccountLifecycleColumnsCache = false;
+      return false;
+    }
+
+    throw new Error(error.message);
+  }
+
+  profileHasAccountLifecycleColumnsCache = true;
+  return true;
+};
+
 const getProfileSelectColumns = ({
   hasSocialColumns,
   hasLocationColumns,
+  hasAccountLifecycleColumns,
 }: {
   hasSocialColumns: boolean;
   hasLocationColumns: boolean;
+  hasAccountLifecycleColumns: boolean;
 }) => {
-  if (hasSocialColumns && hasLocationColumns) {
-    return PROFILE_SELECT_COLUMNS_WITH_SOCIAL_AND_LOCATION;
-  }
+  const columns = [PROFILE_SELECT_COLUMNS_BASE];
 
   if (hasSocialColumns) {
-    return PROFILE_SELECT_COLUMNS_WITH_SOCIAL;
+    columns.push(PROFILE_SOCIAL_COLUMNS);
   }
 
   if (hasLocationColumns) {
-    return PROFILE_SELECT_COLUMNS_WITH_LOCATION;
+    columns.push(PROFILE_LOCATION_COLUMNS);
   }
 
-  return PROFILE_SELECT_COLUMNS_BASE;
+  if (hasAccountLifecycleColumns) {
+    columns.push(PROFILE_ACCOUNT_LIFECYCLE_COLUMNS);
+  }
+
+  return columns.join(', ');
 };
 
 const mapRepositoryRecord = (record: any): HubRepository => ({
@@ -508,6 +538,21 @@ const ensureAuthenticatedUser = async () => {
   }
 
   return { supabase, user: data.user };
+};
+
+const getAuthenticatedServerHeaders = async () => {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token || '';
+
+  if (error || !accessToken) {
+    throw new Error('You need to sign in again to continue.');
+  }
+
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${accessToken}`,
+  };
 };
 
 const pushActivity = async ({
@@ -608,6 +653,18 @@ const writeLocalProfileExtras = (userId: string, extras: LocalProfileExtras) => 
   }
 };
 
+const clearLocalProfileExtras = (userId: string) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(`${LOCAL_PROFILE_EXTRAS_KEY_PREFIX}${userId}`);
+  } catch {
+    // ignore localStorage delete failures
+  }
+};
+
 const mergeProfileExtras = ({
   userId,
   profile,
@@ -649,6 +706,8 @@ const mapProfileRecord = ({
     location_lat?: number | null;
     location_lng?: number | null;
     avatar_url: string | null;
+    account_status?: string | null;
+    account_disabled_at?: string | null;
   };
   fallbackEmail: string;
   fallbackName: string;
@@ -668,6 +727,8 @@ const mapProfileRecord = ({
   locationLat: typeof profile.location_lat === 'number' ? profile.location_lat : null,
   locationLng: typeof profile.location_lng === 'number' ? profile.location_lng : null,
   avatarUrl: profile.avatar_url || '',
+  accountStatus: profile.account_status === 'disabled' ? 'disabled' : 'active',
+  accountDisabledAt: profile.account_disabled_at || null,
 });
 
 const normalizeOptionalUrl = (value: string, label: string) => {
@@ -698,13 +759,15 @@ const ensureProfileRow = async ({
   preferredUsername?: string;
 }): Promise<any> => {
   const supabase = getSupabaseClient();
-  const [hasSocialColumns, hasLocationColumns] = await Promise.all([
+  const [hasSocialColumns, hasLocationColumns, hasAccountLifecycleColumns] = await Promise.all([
     hasProfileSocialColumns(supabase),
     hasProfileLocationColumns(supabase),
+    hasProfileAccountLifecycleColumns(supabase),
   ]);
   const profileSelectColumns = getProfileSelectColumns({
     hasSocialColumns,
     hasLocationColumns,
+    hasAccountLifecycleColumns,
   });
   const { data, error } = await supabase
     .from('user_profiles')
@@ -1292,13 +1355,15 @@ export const updateCurrentUserProfile = async ({
   avatarUrl: string;
 }): Promise<HubUserProfile> => {
   const { supabase, user } = await ensureAuthenticatedUser();
-  const [hasSocialColumns, hasLocationColumns] = await Promise.all([
+  const [hasSocialColumns, hasLocationColumns, hasAccountLifecycleColumns] = await Promise.all([
     hasProfileSocialColumns(supabase, true),
     hasProfileLocationColumns(supabase, true),
+    hasProfileAccountLifecycleColumns(supabase, true),
   ]);
   const profileSelectColumns = getProfileSelectColumns({
     hasSocialColumns,
     hasLocationColumns,
+    hasAccountLifecycleColumns,
   });
   const nextFullName = fullName.trim();
   const nextBio = bio.trim();
@@ -1401,6 +1466,48 @@ export const updateCurrentUserProfile = async ({
       fallbackName: nextFullName,
     }),
   });
+};
+
+export const disableCurrentUserAccount = async (): Promise<void> => {
+  const headers = await getAuthenticatedServerHeaders();
+  const response = await fetch(`${API_BASE_URL}/auth/account/disable`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((body as { error?: string }).error || 'Failed to disable account.');
+  }
+};
+
+export const reactivateCurrentUserAccount = async (): Promise<string> => {
+  const headers = await getAuthenticatedServerHeaders();
+  const response = await fetch(`${API_BASE_URL}/auth/account/reactivate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({}),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((body as { error?: string }).error || 'Failed to reactivate account.');
+  }
+  return ((body as { username?: string }).username || '').trim();
+};
+
+export const deleteCurrentUserAccount = async (): Promise<void> => {
+  const { user } = await ensureAuthenticatedUser();
+  const headers = await getAuthenticatedServerHeaders();
+  const response = await fetch(`${API_BASE_URL}/auth/account/delete`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ confirmation: 'DELETE' }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((body as { error?: string }).error || 'Failed to permanently delete account.');
+  }
+  clearLocalProfileExtras(user.id);
 };
 
 export const updateCurrentUserEmail = async (email: string) => {
@@ -2498,9 +2605,14 @@ export const uploadRepositoryFiles = async ({ repoId, files, commitMessage }: Up
 
 export const signOutDashboardUser = async () => {
   const supabase = getSupabaseClient();
+  const { data } = await supabase.auth.getUser();
   const { error } = await supabase.auth.signOut();
 
   clearGitHubToken();
+  clearOtpJwt();
+  if (data.user?.id) {
+    clearLocalProfileExtras(data.user.id);
+  }
 
   if (error) {
     throw new Error(error.message);
@@ -3039,14 +3151,32 @@ export const saveTronChatState = async ({
 
 export const getPublicUserProfile = async (username: string): Promise<PublicUserProfile | null> => {
   const supabase = getSupabaseClient();
+  const hasAccountLifecycleColumns = await hasProfileAccountLifecycleColumns(supabase).catch(() => false);
   const { data, error } = await supabase
     .from('user_profiles')
-    .select('id, username, full_name, bio, avatar_url, github_url, website_url, linkedin_url, location_label, profile_readme' as any)
+    .select(
+      [
+        'id',
+        'username',
+        'full_name',
+        'bio',
+        'avatar_url',
+        'github_url',
+        'website_url',
+        'linkedin_url',
+        'location_label',
+        'profile_readme',
+        ...(hasAccountLifecycleColumns ? ['account_status'] : []),
+      ].join(', ') as any,
+    )
     .eq('username', username)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
   const r = data as any;
+  if (hasAccountLifecycleColumns && r.account_status === 'disabled') {
+    return null;
+  }
   return {
     id: r.id, username: r.username || '', fullName: r.full_name || '', bio: r.bio || '',
     avatarUrl: r.avatar_url || '', githubUrl: r.github_url || '', websiteUrl: r.website_url || '',
@@ -3086,12 +3216,20 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
 
   // 2. Batch-fetch owner profiles by distinct owner_ids
   const ownerIds = [...new Set(repos.map((r) => r.owner_id).filter(Boolean))];
-  const profileMap: Record<string, { username: string; full_name: string; avatar_url: string }> = {};
+  const hasAccountLifecycleColumns = await hasProfileAccountLifecycleColumns(supabase).catch(() => false);
+  const ownerProfileColumns = [
+    'id',
+    'username',
+    'full_name',
+    'avatar_url',
+    ...(hasAccountLifecycleColumns ? ['account_status'] : []),
+  ].join(', ');
+  const profileMap: Record<string, { username: string; full_name: string; avatar_url: string; account_status?: string | null }> = {};
 
   // First attempt: batch query (works when user_profiles has a public SELECT policy)
   const { data: batchProfiles } = await supabase
     .from('user_profiles')
-    .select('id, username, full_name, avatar_url')
+    .select(ownerProfileColumns as any)
     .in('id', ownerIds);
 
   for (const p of (batchProfiles as any[]) || []) {
@@ -3107,7 +3245,7 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
       missingIds.map(async (id) => {
         const { data } = await supabase
           .from('user_profiles')
-          .select('id, username, full_name, avatar_url')
+          .select(ownerProfileColumns as any)
           .eq('id', id)
           .maybeSingle();
         if (data && (data as any).id) {
@@ -3128,12 +3266,14 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
   }
 
   // 3. Merge
-  return repos.map((repo) => ({
-    ...repo,
-    ownerUsername: profileMap[repo.owner_id]?.username || '',
-    ownerFullName: profileMap[repo.owner_id]?.full_name || '',
-    ownerAvatarUrl: profileMap[repo.owner_id]?.avatar_url || '',
-  }));
+  return repos
+    .filter((repo) => !hasAccountLifecycleColumns || profileMap[repo.owner_id]?.account_status !== 'disabled')
+    .map((repo) => ({
+      ...repo,
+      ownerUsername: profileMap[repo.owner_id]?.username || '',
+      ownerFullName: profileMap[repo.owner_id]?.full_name || '',
+      ownerAvatarUrl: profileMap[repo.owner_id]?.avatar_url || '',
+    }));
 };
 
 export const followUser = async (targetUserId: string): Promise<void> => {

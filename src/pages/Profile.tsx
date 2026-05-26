@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { Camera, Check, Copy, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Lock, Mail, MapPin, Navigation2, Phone, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertTriangle, Camera, Check, Copy, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Lock, Mail, MapPin, Navigation2, Phone, Plus, Save, Search, ShieldOff, Trash2, X } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
 
 import Footer from '@/components/Footer';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +37,9 @@ import {
   verifyAndSaveSecondaryEmail,
   removeSecondaryEmail,
   changeUsername,
+  disableCurrentUserAccount,
+  deleteCurrentUserAccount,
+  signOutDashboardUser,
   type HubUserProfile,
 } from '@/lib/hubApi';
 import { loadGoogleMapsApi } from '@/lib/googleMaps';
@@ -105,6 +118,7 @@ const createCroppedAvatarDataUrl = async (imageUrl: string, pixelCrop: Area) => 
 };
 
 const Profile = () => {
+  const navigate = useNavigate();
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [accessError, setAccessError] = useState('');
   const [profile, setProfile] = useState<HubUserProfile | null>(null);
@@ -136,6 +150,7 @@ const Profile = () => {
   const [usernameStatus, setUsernameStatus] = useState('');
   const [usernameStatusOk, setUsernameStatusOk] = useState(false);
   const [isSavingUsername, setIsSavingUsername] = useState(false);
+  const [isUsernameFormReady, setIsUsernameFormReady] = useState(false);
   const [secondaryEmail, setSecondaryEmail] = useState('');
   const [newSecondaryEmail, setNewSecondaryEmail] = useState('');
   const [secondaryOtp, setSecondaryOtp] = useState('');
@@ -148,6 +163,13 @@ const Profile = () => {
   const [emailStatus, setEmailStatus] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
+  const [isDisableDialogOpen, setIsDisableDialogOpen] = useState(false);
+  const [disableConfirmText, setDisableConfirmText] = useState('');
+  const [isDisablingAccount, setIsDisablingAccount] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [accountActionStatus, setAccountActionStatus] = useState('');
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const [cropSourceImage, setCropSourceImage] = useState('');
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -611,6 +633,42 @@ const Profile = () => {
       setEmailStatus(message);
     } finally {
       setIsSavingEmail(false);
+    }
+  };
+
+  const handleDisableAccount = async () => {
+    setIsDisablingAccount(true);
+    setAccountActionStatus('');
+
+    try {
+      await disableCurrentUserAccount();
+      await signOutDashboardUser().catch(() => {});
+      navigate('/signin', { replace: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to disable account.';
+      setAccountActionStatus(message);
+    } finally {
+      setIsDisablingAccount(false);
+      setIsDisableDialogOpen(false);
+      setDisableConfirmText('');
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeletingAccount(true);
+    setAccountActionStatus('');
+
+    try {
+      await deleteCurrentUserAccount();
+      await signOutDashboardUser().catch(() => {});
+      navigate('/signup', { replace: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to permanently delete account.';
+      setAccountActionStatus(message);
+    } finally {
+      setIsDeletingAccount(false);
+      setIsDeleteDialogOpen(false);
+      setDeleteConfirmText('');
     }
   };
 
@@ -1317,15 +1375,21 @@ const Profile = () => {
                       <span className="absolute inset-y-0 left-3 flex items-center text-muted-foreground text-sm pointer-events-none">@</span>
                       <Input
                         id="new-username"
+                        name="cyberx-new-username"
                         type="text"
                         value={newUsername}
                         onChange={(e) => {
                           setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''));
                           setUsernameStatus('');
                         }}
+                        onFocus={() => setIsUsernameFormReady(true)}
                         placeholder="new_username"
                         className="pl-8"
                         maxLength={30}
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCapitalize="none"
+                        readOnly={!isUsernameFormReady}
                       />
                     </div>
                     {/* Live format feedback */}
@@ -1351,11 +1415,15 @@ const Profile = () => {
                     <div className="relative">
                       <Input
                         id="username-password"
+                        name="cyberx-username-change-password"
                         type={showUsernamePassword ? 'text' : 'password'}
                         value={usernamePassword}
                         onChange={(e) => setUsernamePassword(e.target.value)}
+                        onFocus={() => setIsUsernameFormReady(true)}
                         placeholder="Your account password"
                         className="pr-10"
+                        autoComplete="new-password"
+                        readOnly={!isUsernameFormReady}
                       />
                       <button
                         type="button"
@@ -1403,10 +1471,170 @@ const Profile = () => {
                   </Button>
                 </CardContent>
               </Card>
+
+              <Card className="border-destructive/30">
+                <CardHeader>
+                  <CardTitle>Account Access</CardTitle>
+                  <CardDescription>
+                    Temporarily disable your account or permanently delete it. Permanent deletion removes your account data and frees your primary email so it can be used again.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="rounded-lg border border-border bg-muted/20 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">Current status</p>
+                        <p className="text-sm text-muted-foreground">
+                          {profile?.accountStatus === 'disabled'
+                            ? 'This account is currently disabled.'
+                            : 'This account is active and available.'}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                        profile?.accountStatus === 'disabled'
+                          ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                          : 'border-green-500/30 bg-green-500/10 text-green-300'
+                      }`}>
+                        {profile?.accountStatus === 'disabled' ? 'Disabled' : 'Active'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border p-4 space-y-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-foreground">Temporarily disable account</p>
+                      <p className="text-sm text-muted-foreground">
+                        You will be signed out immediately. You can sign back in later and reactivate the account.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10 hover:text-amber-200"
+                      onClick={() => setIsDisableDialogOpen(true)}
+                    >
+                      <ShieldOff className="h-4 w-4 mr-2" />
+                      Temporarily Disable
+                    </Button>
+                  </div>
+
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-foreground">Permanently delete account</p>
+                      <p className="text-sm text-muted-foreground">
+                        This action cannot be undone. Your profile, repositories, notifications, reset records, and related account data will be removed.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => setIsDeleteDialogOpen(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Account Permanently
+                    </Button>
+                  </div>
+
+                  {accountActionStatus && (
+                    <p className="text-sm text-destructive flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      {accountActionStatus}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
         </div>
       </section>
+
+      <AlertDialog
+        open={isDisableDialogOpen}
+        onOpenChange={(open) => {
+          setIsDisableDialogOpen(open);
+          if (!open) {
+            setDisableConfirmText('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Temporarily Disable Account</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your account will be hidden from normal use until you sign in again and reactivate it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Type <span className="font-semibold text-foreground">DISABLE</span> to confirm.
+            </p>
+            <Input
+              value={disableConfirmText}
+              onChange={(event) => setDisableConfirmText(event.target.value)}
+              placeholder="DISABLE"
+              autoComplete="off"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDisablingAccount}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (disableConfirmText.trim().toUpperCase() !== 'DISABLE' || isDisablingAccount) return;
+                void handleDisableAccount();
+              }}
+              disabled={disableConfirmText.trim().toUpperCase() !== 'DISABLE' || isDisablingAccount}
+              className="border-amber-500/40 bg-amber-500 text-black hover:bg-amber-400"
+            >
+              {isDisablingAccount ? 'Disabling...' : 'Disable Account'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open);
+          if (!open) {
+            setDeleteConfirmText('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Account Permanently</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes your account. Your primary email will become available for a new signup after deletion.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Type <span className="font-semibold text-foreground">DELETE</span> to confirm permanent deletion.
+            </p>
+            <Input
+              value={deleteConfirmText}
+              onChange={(event) => setDeleteConfirmText(event.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingAccount}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingAccount) return;
+                void handleDeleteAccount();
+              }}
+              disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingAccount}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingAccount ? 'Deleting...' : 'Delete Account'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Footer />
     </div>

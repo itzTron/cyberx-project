@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { AuthApiError, signInUser, signInWithGitHub } from '@/lib/authApi';
+import { reactivateCurrentUserAccount } from '@/lib/hubApi';
 import { OtpApiError, sendOtp, verifyOtp } from '@/lib/otpApi';
 import { extractAndStoreGitHubToken } from '@/lib/githubApi';
 import { getSupabaseClient } from '@/lib/supabase';
@@ -34,6 +35,8 @@ const SignIn = () => {
   const [isGitHubLoading, setIsGitHubLoading] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [formError, setFormError] = useState('');
+  const [accountReactivationUsername, setAccountReactivationUsername] = useState('');
+  const [isReactivatingAccount, setIsReactivatingAccount] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
@@ -59,6 +62,17 @@ const SignIn = () => {
 
   // OTP tab: accepts username or email
   const isOtpEmailValid = otpEmail.trim().length > 0;
+
+  const clearAccountReactivationState = () => {
+    setAccountReactivationUsername('');
+    setIsReactivatingAccount(false);
+  };
+
+  const markAccountDisabled = (username: string, message?: string) => {
+    setSubmitSuccess('');
+    setAccountReactivationUsername(username);
+    setFormError(message || 'This account is temporarily disabled. Reactivate it to continue.');
+  };
 
   // ── Resend cooldown timer ──────────────────────────────────────────────────
   useEffect(() => {
@@ -133,13 +147,15 @@ const SignIn = () => {
           // This ensures we navigate to the existing account rather than a new
           // profile derived from the GitHub handle (e.g., "bumblebee").
           let resolvedUsername: string | null = null;
+          let accountStatus: string | null = null;
           try {
             const { data: profileData } = await supabase
               .from('user_profiles')
-              .select('username')
+              .select('username, account_status' as any)
               .eq('id', userId)
               .maybeSingle();
             resolvedUsername = (profileData?.username as string | null) || null;
+            accountStatus = (profileData as { account_status?: string | null } | null)?.account_status || null;
           } catch {
             // Non-fatal — fall through to metadata fallback
           }
@@ -156,6 +172,14 @@ const SignIn = () => {
                 emailVal.split('@')[0] ||
                 '',
               ) || 'dashboard';
+          }
+
+          if (accountStatus === 'disabled') {
+            markAccountDisabled(
+              resolvedUsername,
+              'This account is temporarily disabled. Reactivate it to restore access.',
+            );
+            return;
           }
 
           navigate(`/${resolvedUsername}`);
@@ -179,6 +203,16 @@ const SignIn = () => {
     setIsSubmitting(true);
     try {
       const response = await signInUser({ email: trimmedIdentifier, password });
+      if (response.accountStatus === 'disabled') {
+        setPassword('');
+        markAccountDisabled(
+          response.user.username,
+          'This account is temporarily disabled. Reactivate it to continue.',
+        );
+        return;
+      }
+
+      clearAccountReactivationState();
       setSubmitSuccess(`${response.message} Logged in as ${response.user.email}.`);
       setEmail('');
       setPassword('');
@@ -197,6 +231,7 @@ const SignIn = () => {
 
   const handleGitHubSignIn = async () => {
     setFormError('');
+    clearAccountReactivationState();
     setIsGitHubLoading(true);
     try {
       await signInWithGitHub();
@@ -269,8 +304,33 @@ const SignIn = () => {
         if (sessionError) {
           console.warn('[OTP signin] Supabase session error:', sessionError.message);
         }
+
+        try {
+          const { data: profileData } = await supabase
+            .from('user_profiles')
+            .select('username, account_status' as any)
+            .eq('id', res.user.id)
+            .maybeSingle();
+          const resolvedUsername = (profileData?.username as string | null) || res.user.username;
+          const accountStatus = (profileData as { account_status?: string | null } | null)?.account_status || null;
+
+          if (accountStatus === 'disabled') {
+            markAccountDisabled(
+              resolvedUsername,
+              'This account is temporarily disabled. Reactivate it to continue.',
+            );
+            return;
+          }
+
+          clearAccountReactivationState();
+          navigate(`/${resolvedUsername}`);
+          return;
+        } catch {
+          // fall through to username from OTP response
+        }
       }
 
+      clearAccountReactivationState();
       navigate(`/${res.user.username}`);
     } catch (error) {
       if (error instanceof OtpApiError) {
@@ -341,7 +401,35 @@ const SignIn = () => {
               {formError && (
                 <div className="mb-5 flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
-                  <span>{formError}</span>
+                  <div className="flex-1 space-y-3">
+                    <span className="block">{formError}</span>
+                    {accountReactivationUsername && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-amber-500/40 bg-transparent text-amber-200 hover:bg-amber-500/10 hover:text-amber-100"
+                        disabled={isReactivatingAccount}
+                        onClick={async () => {
+                          setIsReactivatingAccount(true);
+                          try {
+                            const username = await reactivateCurrentUserAccount();
+                            clearAccountReactivationState();
+                            setFormError('');
+                            navigate(`/${username || accountReactivationUsername}`);
+                          } catch (error) {
+                            setFormError(error instanceof Error ? error.message : 'Failed to reactivate account.');
+                          } finally {
+                            setIsReactivatingAccount(false);
+                          }
+                        }}
+                      >
+                        {isReactivatingAccount
+                          ? <span className="inline-flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin" />Reactivating...</span>
+                          : 'Reactivate Account'}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -374,7 +462,7 @@ const SignIn = () => {
                 <button
                   id="signin-tab-password"
                   type="button"
-                  onClick={() => { setActiveTab('password'); setFormError(''); setSubmitSuccess(''); }}
+                  onClick={() => { setActiveTab('password'); setFormError(''); setSubmitSuccess(''); clearAccountReactivationState(); }}
                   className={cn(
                     'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all duration-200',
                     activeTab === 'password'
@@ -388,7 +476,7 @@ const SignIn = () => {
                 <button
                   id="signin-tab-otp"
                   type="button"
-                  onClick={() => { setActiveTab('otp'); setOtpError(''); setOtpSentMsg(''); setOtpStep('email'); setOtp(''); }}
+                  onClick={() => { setActiveTab('otp'); setOtpError(''); setOtpSentMsg(''); setOtpStep('email'); setOtp(''); setFormError(''); clearAccountReactivationState(); }}
                   className={cn(
                     'flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all duration-200',
                     activeTab === 'otp'

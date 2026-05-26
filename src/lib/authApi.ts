@@ -1,5 +1,6 @@
 import { normalizeEmail, validateSignUpEmail } from '@/lib/emailValidation';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { API_BASE_URL } from '@/lib/apiBaseUrl';
 
 // ── JWT token helpers (for OTP-issued tokens) ─────────────────────────────────
 export { getOtpJwt as getStoredJwt, storeOtpJwt as storeJwt, clearOtpJwt as clearJwt, getOtpAuthHeaders as getAuthHeaders } from '@/lib/otpApi';
@@ -72,6 +73,7 @@ export type SignUpSuccessResponse = {
 export type SignInSuccessResponse = {
   status: 200;
   message: string;
+  accountStatus: 'active' | 'disabled';
   user: {
     id: string;
     email: string;
@@ -226,6 +228,31 @@ const getAuthClient = () => {
   }
 
   return getSupabaseClient();
+};
+
+const getProfileAccountStatus = async (userId: string): Promise<'active' | 'disabled'> => {
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('account_status' as any)
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (message.includes('account_status') && message.includes('column')) {
+        return 'active';
+      }
+      throw error;
+    }
+
+    return (data as { account_status?: string | null } | null)?.account_status === 'disabled'
+      ? 'disabled'
+      : 'active';
+  } catch {
+    return 'active';
+  }
 };
 
 const normalizeUsername = (value: string) =>
@@ -400,10 +427,7 @@ export const signInUser = async ({ email: identifier, password }: SignInPayload)
   if (isEmail) {
     // Might be primary or secondary email — resolve via server
     try {
-      const apiBase =
-        (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SERVER_URL as string | undefined) ||
-        'http://localhost:3001';
-      const res = await fetch(`${apiBase}/auth/resolve-identifier`, {
+      const res = await fetch(`${API_BASE_URL}/auth/resolve-identifier`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: trimmedIdentifier }),
@@ -417,10 +441,7 @@ export const signInUser = async ({ email: identifier, password }: SignInPayload)
   } else {
     // Treat as username — must resolve via server
     try {
-      const apiBase =
-        (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SERVER_URL as string | undefined) ||
-        'http://localhost:3001';
-      const res = await fetch(`${apiBase}/auth/resolve-identifier`, {
+      const res = await fetch(`${API_BASE_URL}/auth/resolve-identifier`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: trimmedIdentifier }),
@@ -473,9 +494,12 @@ export const signInUser = async ({ email: identifier, password }: SignInPayload)
     console.error('Failed to log sign-in activity:', activityError);
   }
 
+  const accountStatus = await getProfileAccountStatus(data.user.id);
+
   return {
     status: 200,
     message: 'Signed in successfully.',
+    accountStatus,
     user: {
       id: data.user.id,
       email: normalizedEmail,
