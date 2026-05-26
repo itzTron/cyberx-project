@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion';
+import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Footer from '@/components/Footer';
 import GlassCard from '@/components/GlassCard';
+import { API_BASE_URL } from '@/lib/apiBaseUrl';
 
 /**
  * /password-change-dispute
@@ -28,7 +30,14 @@ const PasswordChangeDispute = () => {
   const [searchParams] = useSearchParams();
   const status = searchParams.get('status');
   const error = searchParams.get('error');
+  const token = searchParams.get('token');
   const isSuccess = status === 'cancelled';
+  const isRedirectingLegacyLink = !status && !error && !!token;
+
+  useEffect(() => {
+    if (!isRedirectingLegacyLink || !token) return;
+    window.location.replace(`${API_BASE_URL}/auth/dispute-password-change?token=${encodeURIComponent(token)}`);
+  }, [isRedirectingLegacyLink, token]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -39,7 +48,17 @@ const PasswordChangeDispute = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          {isSuccess ? (
+          {isRedirectingLegacyLink ? (
+            <GlassCard className="p-8 text-center space-y-4">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 border border-primary/20">
+                <LoaderCircle className="h-7 w-7 text-primary animate-spin" />
+              </div>
+              <h1 className="text-xl font-bold text-foreground">Verifying Link</h1>
+              <p className="text-sm text-muted-foreground">
+                Processing your request and redirecting you now.
+              </p>
+            </GlassCard>
+          ) : isSuccess ? (
             <GlassCard className="p-8 text-center space-y-6">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20">
                 <ShieldCheck className="h-8 w-8 text-green-400" />

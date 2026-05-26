@@ -157,7 +157,7 @@ const ResetPassword = () => {
                 <ul className="text-xs text-muted-foreground space-y-1.5">
                   <li className="flex items-start gap-2"><span className="text-primary mt-0.5">1.</span>Open the email from Cyberspace-X</li>
                   <li className="flex items-start gap-2"><span className="text-primary mt-0.5">2.</span>Click <strong>"Yes, this was me"</strong> to confirm</li>
-                  <li className="flex items-start gap-2"><span className="text-primary mt-0.5">3.</span>Your new password will be active within <strong>5 minutes</strong></li>
+                  <li className="flex items-start gap-2"><span className="text-primary mt-0.5">3.</span>Your new password will be active <strong>immediately</strong> after confirmation</li>
                   <li className="flex items-start gap-2"><span className="text-destructive mt-0.5">✕</span>If it wasn't you, click <strong>"Not me"</strong> to cancel</li>
                 </ul>
               </div>

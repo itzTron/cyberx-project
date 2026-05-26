@@ -26,6 +26,13 @@ const {
 // Derive the frontend base URL (used in email links)
 const FRONTEND_BASE = (FRONTEND_ORIGIN || 'http://localhost:8080').replace(/\/$/, '');
 
+const getRequestBase = (req) => {
+  const forwardedProto = req.get('x-forwarded-proto');
+  const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  return `${protocol}://${host}`.replace(/\/$/, '');
+};
+
 
 // ── Supabase Admin client (service role — bypasses RLS) ───────────────────────
 const getAdminClient = () => {
@@ -758,7 +765,7 @@ const buildPasswordConfirmEmailHtml = (confirmLink, disputeLink, userEmail) => `
         </td></tr>
         <tr><td style="padding:36px 32px;text-align:center;">
           <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">A password change was requested for <strong style="color:#a78bfa;">${userEmail}</strong>.</p>
-          <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">Click <strong style="color:#a78bfa;">Yes, this was me</strong> to confirm. The new password will be applied in <strong style="color:#a78bfa;">5 minutes</strong> after confirmation.</p>
+          <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">Click <strong style="color:#a78bfa;">Yes, this was me</strong> to confirm. Your new password will be applied <strong style="color:#a78bfa;">immediately</strong> after confirmation.</p>
           <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
             <tr>
               <td style="padding-right:12px;">
@@ -889,7 +896,7 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
 
 // ── POST /auth/reset-password ─────────────────────────────────────────────────
 // Called by the frontend after Supabase session is established on /reset-password.
-// Stores encrypted new password as PENDING (not yet applied), sends confirm email.
+// Stores encrypted new password as PENDING, then waits for email confirmation before applying it.
 router.post('/reset-password', async (req, res) => {
   try {
     const userId      = (req.body?.userId || '').toString().trim();
@@ -930,8 +937,9 @@ router.post('/reset-password', async (req, res) => {
     }
 
     // Send confirmation email
-    const confirmLink  = `${FRONTEND_BASE}/password-change-confirm?token=${confirmToken}`;
-    const disputeLink  = `${FRONTEND_BASE}/password-change-dispute?token=${disputeToken}`;
+    const requestBase = getRequestBase(req);
+    const confirmLink = `${requestBase}/auth/confirm-password-change?token=${confirmToken}`;
+    const disputeLink = `${requestBase}/auth/dispute-password-change?token=${disputeToken}`;
 
     if (SMTP_USER && SMTP_PASS) {
       const transporter = createTransporter();
@@ -954,6 +962,7 @@ router.post('/reset-password', async (req, res) => {
 
 // ── GET /auth/confirm-password-change ────────────────────────────────────────
 // User clicks "Yes, this was me" link in email.
+// Apply the password immediately and make repeat opens resolve to success.
 router.get('/confirm-password-change', async (req, res) => {
   try {
     const token = (req.query?.token || '').toString().trim();
@@ -969,23 +978,48 @@ router.get('/confirm-password-change', async (req, res) => {
     if (fetchErr || !record) {
       return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=invalid_token`);
     }
-    if (record.status !== 'pending') {
+    if (record.status === 'applied') {
+      return res.redirect(`${FRONTEND_BASE}/password-change-confirm?status=changed`);
+    }
+    if (record.status === 'disputed') {
       return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=already_used`);
     }
-    if (new Date() > new Date(record.expires_at)) {
+    if (record.status === 'expired' || new Date() > new Date(record.expires_at)) {
       await supabase.from('pending_password_changes').update({ status: 'expired' }).eq('id', record.id);
       return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=expired`);
     }
 
-    const appliesAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+    const plainPassword = decryptPassword(record.encrypted_password);
+    const confirmedAt = record.confirmed_at || new Date().toISOString();
+
+    const { error: updateErr } = await supabase.auth.admin.updateUserById(record.user_id, {
+      password: plainPassword,
+    });
+
+    if (updateErr) {
+      console.error(`[confirm-pw-change] Failed to update password for ${record.user_id}:`, updateErr.message);
+      return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=server_error`);
+    }
+
     await supabase.from('pending_password_changes').update({
-      status: 'confirmed',
-      confirmed_at: new Date().toISOString(),
-      applies_at: appliesAt,
+      status: 'applied',
+      confirmed_at: confirmedAt,
+      applies_at: new Date().toISOString(),
     }).eq('id', record.id);
 
-    console.log(`[confirm-pw-change] Confirmed for user ${record.user_id}, applies at ${appliesAt}`);
-    return res.redirect(`${FRONTEND_BASE}/password-change-confirm?status=confirmed`);
+    if (SMTP_USER && SMTP_PASS) {
+      const transporter = createTransporter();
+      await transporter.sendMail({
+        from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+        to: record.user_email,
+        subject: '✅ Your Cyberspace-X password has been changed',
+        text: `Your password has been successfully updated. If you didn't do this, contact support immediately.`,
+        html: buildPasswordAppliedEmailHtml(record.user_email),
+      });
+    }
+
+    console.log(`[confirm-pw-change] Password applied for user ${record.user_id} (${record.user_email})`);
+    return res.redirect(`${FRONTEND_BASE}/password-change-confirm?status=changed`);
   } catch (err) {
     console.error('[confirm-pw-change] error:', err.message);
     return res.redirect(`${FRONTEND_BASE}/password-change-confirm?error=server_error`);
