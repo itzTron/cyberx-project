@@ -1490,9 +1490,26 @@ export const reactivateCurrentUserAccount = async (): Promise<string> => {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error((body as { error?: string }).error || 'Failed to reactivate account.');
+    throw new Error((body as { error?: string }).error || 'Failed to send reactivation email.');
   }
-  return ((body as { username?: string }).username || '').trim();
+  return ((body as { message?: string }).message || 'Reactivation email sent. Check your inbox.').trim();
+};
+
+export const verifyReactivationToken = async (token: string): Promise<{ message: string; username: string; alreadyActive?: boolean }> => {
+  const response = await fetch(`${API_BASE_URL}/auth/account/verify-reactivation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((body as { error?: string }).error || 'Failed to verify reactivation token.');
+  }
+  return {
+    message: ((body as { message?: string }).message || '').trim(),
+    username: ((body as { username?: string }).username || '').trim(),
+    alreadyActive: Boolean((body as { alreadyActive?: boolean }).alreadyActive),
+  };
 };
 
 export const deleteCurrentUserAccount = async (): Promise<void> => {

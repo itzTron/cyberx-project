@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertTriangle, Camera, Check, Copy, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Lock, Mail, MapPin, Navigation2, Phone, Plus, Save, Search, ShieldOff, Trash2, X } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
@@ -119,6 +120,7 @@ const createCroppedAvatarDataUrl = async (imageUrl: string, pixelCrop: Area) => 
 
 const Profile = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [accessError, setAccessError] = useState('');
   const [profile, setProfile] = useState<HubUserProfile | null>(null);
@@ -642,6 +644,12 @@ const Profile = () => {
 
     try {
       await disableCurrentUserAccount();
+      toast({
+        title: '⚠️ Account Disabled',
+        description: 'If you do not reactivate your account within 60 days, it will be permanently deactivated and all your data will be removed.',
+        variant: 'destructive',
+        duration: 10000,
+      });
       await signOutDashboardUser().catch(() => {});
       navigate('/signin', { replace: true });
     } catch (error) {
@@ -1504,7 +1512,7 @@ const Profile = () => {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-foreground">Temporarily disable account</p>
                       <p className="text-sm text-muted-foreground">
-                        You will be signed out immediately. You can sign back in later and reactivate the account.
+                        You will be signed out immediately. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account will be permanently deactivated.
                       </p>
                     </div>
                     <Button
@@ -1561,7 +1569,7 @@ const Profile = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Temporarily Disable Account</AlertDialogTitle>
             <AlertDialogDescription>
-              Your account will be hidden from normal use until you sign in again and reactivate it.
+              Your account will be hidden from normal use until you reactivate it. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account and all associated data will be permanently removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">

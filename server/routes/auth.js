@@ -863,52 +863,235 @@ router.post('/account/disable', accountLifecycleLimiter, async (req, res) => {
   }
 });
 
+/**
+ * Build a branded HTML email for account reactivation.
+ */
+const buildReactivationEmailHtml = (reactivationLink) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reactivate your Cyberspace-X account</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="520" cellpadding="0" cellspacing="0" style="background:#11111a;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:28px 32px;text-align:center;">
+              <p style="margin:0;font-size:11px;letter-spacing:3px;color:#fffbeb;text-transform:uppercase;font-weight:600;">Cyberspace-X 2.0</p>
+              <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">Account Reactivation</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 32px;text-align:center;">
+              <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">You requested to reactivate your Cyberspace-X account.</p>
+              <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">This link expires in <strong style="color:#fbbf24;">24 hours</strong>. If you did not request this, you can safely ignore this email.</p>
+
+              <a href="${reactivationLink}" style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;text-decoration:none;margin-bottom:28px;">Reactivate My Account</a>
+
+              <p style="margin:20px 0 8px;color:#6b7280;font-size:12px;">Or copy and paste this link into your browser:</p>
+              <p style="margin:0;color:#4b5563;font-size:11px;word-break:break-all;">${reactivationLink}</p>
+
+              <div style="margin-top:28px;padding:16px;background:#1a1a2e;border:1px solid #292524;border-radius:8px;">
+                <p style="margin:0;color:#fbbf24;font-size:12px;font-weight:600;">⚠️ Important</p>
+                <p style="margin:6px 0 0;color:#9ca3af;font-size:12px;">If you do not reactivate your account within 60 days of disabling it, your account and all associated data will be permanently removed.</p>
+              </div>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
+              <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+
+// ── POST /auth/account/reactivate ────────────────────────────────────────────
+// Sends a reactivation email with a signed JWT link to the user's primary email.
+// The user must click the link to actually reactivate their account.
 router.post('/account/reactivate', accountLifecycleLimiter, async (req, res) => {
   try {
     const { supabase, user } = await getAuthenticatedSessionUser(req);
 
+    if (!JWT_SECRET) {
+      console.error('[account/reactivate] JWT_SECRET is not configured.');
+      return res.status(500).json({ error: 'Server configuration error.' });
+    }
+
+    if (!SMTP_USER || !SMTP_PASS) {
+      console.error('[account/reactivate] SMTP credentials are not configured.');
+      return res.status(500).json({ error: 'Email service is not configured on the server.' });
+    }
+
+    // Verify that the account is actually disabled
     const { data: profile, error: fetchErr } = await supabase
       .from('user_profiles')
-      .select('username')
+      .select('username, account_status')
       .eq('id', user.id)
       .maybeSingle();
 
     if (fetchErr) {
       console.error('[account/reactivate] profile fetch error:', fetchErr.message);
+      return res.status(500).json({ error: 'Failed to send reactivation email. Please try again.' });
+    }
+
+    if (profile?.account_status !== 'disabled') {
+      return res.status(400).json({ error: 'This account is already active.' });
+    }
+
+    // Generate a signed JWT reactivation token (24-hour expiry)
+    const reactivationToken = jwt.sign(
+      { user_id: user.id, purpose: 'reactivate' },
+      JWT_SECRET,
+      { expiresIn: '24h', issuer: 'cyberspace-x', audience: 'cyberspace-x-client' },
+    );
+
+    const reactivationLink = `${FRONTEND_BASE}/reactivate-account?token=${encodeURIComponent(reactivationToken)}`;
+    const userEmail = (user.email || '').trim().toLowerCase();
+
+    // Send the reactivation email
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+      to: userEmail,
+      subject: 'Reactivate your Cyberspace-X account',
+      text: `You requested to reactivate your Cyberspace-X account.\n\nClick the link below to reactivate:\n${reactivationLink}\n\nThis link expires in 24 hours.\n\nIf you did not request this, you can safely ignore this email.`,
+      html: buildReactivationEmailHtml(reactivationLink),
+    });
+
+    console.log(`[account/reactivate] Reactivation email sent to ${userEmail} for user ${user.id}`);
+
+    await Promise.allSettled([
+      supabase.from('activity_logs').insert({
+        user_id: user.id,
+        email: userEmail,
+        activity_type: 'reactivation_email_sent',
+        activity_context: { source: 'sign_in' },
+      }),
+    ]);
+
+    return res.status(200).json({
+      message: 'A reactivation link has been sent to your registered email. Check your inbox to reactivate your account.',
+    });
+  } catch (err) {
+    console.error('[account/reactivate] error:', err.message);
+    return res.status(err.statusCode || 500).json({
+      error: err.statusCode === 401 ? err.message : 'Failed to send reactivation email. Please try again.',
+    });
+  }
+});
+
+// ── POST /auth/account/verify-reactivation ───────────────────────────────────
+// Verifies the signed JWT token from the reactivation email link
+// and reactivates the user's account.
+router.post('/account/verify-reactivation', async (req, res) => {
+  try {
+    const token = (req.body?.token || '').toString().trim();
+
+    if (!token) {
+      return res.status(400).json({ error: 'Reactivation token is required.' });
+    }
+
+    if (!JWT_SECRET) {
+      console.error('[account/verify-reactivation] JWT_SECRET is not configured.');
+      return res.status(500).json({ error: 'Server configuration error.' });
+    }
+
+    // Verify the JWT token
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET, {
+        issuer: 'cyberspace-x',
+        audience: 'cyberspace-x-client',
+      });
+    } catch (jwtErr) {
+      if (jwtErr.name === 'TokenExpiredError') {
+        return res.status(400).json({ error: 'This reactivation link has expired. Please request a new one from the sign-in page.' });
+      }
+      return res.status(400).json({ error: 'Invalid reactivation link. Please request a new one from the sign-in page.' });
+    }
+
+    if (!payload || payload.purpose !== 'reactivate' || !payload.user_id) {
+      return res.status(400).json({ error: 'Invalid reactivation token.' });
+    }
+
+    const supabase = getAdminClient();
+    const userId = payload.user_id;
+
+    // Fetch the profile to get username
+    const { data: profile, error: fetchErr } = await supabase
+      .from('user_profiles')
+      .select('username, account_status')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('[account/verify-reactivation] profile fetch error:', fetchErr.message);
       return res.status(500).json({ error: 'Failed to reactivate account. Please try again.' });
     }
 
+    if (!profile) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    if (profile.account_status !== 'disabled') {
+      return res.status(200).json({
+        message: 'This account is already active.',
+        username: (profile.username || '').toString().trim(),
+        alreadyActive: true,
+      });
+    }
+
+    // Reactivate the account
     const { error: updateErr } = await supabase
       .from('user_profiles')
       .update({
         account_status: 'active',
         account_disabled_at: null,
       })
-      .eq('id', user.id);
+      .eq('id', userId);
 
     if (updateErr) {
-      console.error('[account/reactivate] profile update error:', updateErr.message);
+      console.error('[account/verify-reactivation] profile update error:', updateErr.message);
       return res.status(500).json({ error: 'Failed to reactivate account. Please try again.' });
     }
 
+    // Fetch user email for activity log
+    let userEmail = '';
+    try {
+      const { data: userData } = await supabase.auth.admin.getUserById(userId);
+      userEmail = (userData?.user?.email || '').trim().toLowerCase();
+    } catch { /* non-fatal */ }
+
     await Promise.allSettled([
       supabase.from('activity_logs').insert({
-        user_id: user.id,
-        email: (user.email || '').trim().toLowerCase(),
+        user_id: userId,
+        email: userEmail,
         activity_type: 'account_reactivated',
-        activity_context: { source: 'sign_in' },
+        activity_context: { source: 'email_link' },
       }),
     ]);
 
+    console.log(`[account/verify-reactivation] Account reactivated for user ${userId}`);
+
     return res.status(200).json({
-      message: 'Account reactivated successfully.',
-      username: (profile?.username || '').toString().trim(),
+      message: 'Account reactivated successfully! You can now sign in.',
+      username: (profile.username || '').toString().trim(),
     });
   } catch (err) {
-    console.error('[account/reactivate] error:', err.message);
-    return res.status(err.statusCode || 500).json({
-      error: err.statusCode === 401 ? err.message : 'Failed to reactivate account. Please try again.',
-    });
+    console.error('[account/verify-reactivation] error:', err.message);
+    return res.status(500).json({ error: 'Failed to reactivate account. Please try again.' });
   }
 });
 

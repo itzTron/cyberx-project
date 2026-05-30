@@ -26,6 +26,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import PasswordChangeConfirm from "./pages/PasswordChangeConfirm";
 import PasswordChangeDispute from "./pages/PasswordChangeDispute";
+import ReactivateAccount from "./pages/ReactivateAccount";
 
 const queryClient = new QueryClient();
 
@@ -67,6 +68,7 @@ const App = () => {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/password-change-confirm" element={<PasswordChangeConfirm />} />
             <Route path="/password-change-dispute" element={<PasswordChangeDispute />} />
+            <Route path="/reactivate-account" element={<ReactivateAccount />} />
             <Route path="/:username" element={<Dashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

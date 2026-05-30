@@ -154,7 +154,7 @@ const SignIn = () => {
               .select('username, account_status' as any)
               .eq('id', userId)
               .maybeSingle();
-            resolvedUsername = (profileData?.username as string | null) || null;
+            resolvedUsername = ((profileData as any)?.username as string | null) || null;
             accountStatus = (profileData as { account_status?: string | null } | null)?.account_status || null;
           } catch {
             // Non-fatal — fall through to metadata fallback
@@ -311,7 +311,7 @@ const SignIn = () => {
             .select('username, account_status' as any)
             .eq('id', res.user.id)
             .maybeSingle();
-          const resolvedUsername = (profileData?.username as string | null) || res.user.username;
+          const resolvedUsername = ((profileData as any)?.username as string | null) || res.user.username;
           const accountStatus = (profileData as { account_status?: string | null } | null)?.account_status || null;
 
           if (accountStatus === 'disabled') {
@@ -404,35 +404,47 @@ const SignIn = () => {
                   <div className="flex-1 space-y-3">
                     <span className="block">{formError}</span>
                     {accountReactivationUsername && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="border-amber-500/40 bg-transparent text-amber-200 hover:bg-amber-500/10 hover:text-amber-100"
-                        disabled={isReactivatingAccount}
-                        onClick={async () => {
-                          setIsReactivatingAccount(true);
-                          try {
-                            const username = await reactivateCurrentUserAccount();
-                            clearAccountReactivationState();
-                            setFormError('');
-                            navigate(`/${username || accountReactivationUsername}`);
-                          } catch (error) {
-                            setFormError(error instanceof Error ? error.message : 'Failed to reactivate account.');
-                          } finally {
-                            setIsReactivatingAccount(false);
-                          }
-                        }}
-                      >
-                        {isReactivatingAccount
-                          ? <span className="inline-flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin" />Reactivating...</span>
-                          : 'Reactivate Account'}
-                      </Button>
+                      <div className="space-y-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="border-amber-500/40 bg-transparent text-amber-200 hover:bg-amber-500/10 hover:text-amber-100"
+                          disabled={isReactivatingAccount}
+                          onClick={async () => {
+                            setIsReactivatingAccount(true);
+                            try {
+                              const message = await reactivateCurrentUserAccount();
+                              setFormError('');
+                              setSubmitSuccess(message);
+                            } catch (error) {
+                              setFormError(error instanceof Error ? error.message : 'Failed to send reactivation email.');
+                            } finally {
+                              setIsReactivatingAccount(false);
+                            }
+                          }}
+                        >
+                          {isReactivatingAccount
+                            ? <span className="inline-flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin" />Sending...</span>
+                            : <span className="inline-flex items-center gap-2"><Mail className="h-4 w-4" />Send Reactivation Email</span>}
+                        </Button>
+                        <p className="text-xs text-amber-400/80">A reactivation link will be sent to your registered email address.</p>
+                      </div>
                     )}
                   </div>
                 </div>
               )}
 
+              {/* Reactivation email sent success banner */}
+              {submitSuccess && !formError && (
+                <div className="mb-5 flex items-start gap-3 rounded-lg border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+                  <Check className="h-4 w-4 shrink-0 mt-0.5 text-green-400" />
+                  <div className="flex-1 space-y-1">
+                    <span className="block">{submitSuccess}</span>
+                    <p className="text-xs text-green-400/70">Check your inbox and click the reactivation link to restore your account.</p>
+                  </div>
+                </div>
+              )}
               {/* GitHub */}
               <Button
                 id="github-signin-button"
