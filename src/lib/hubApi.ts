@@ -2805,6 +2805,7 @@ export const importGitHubRepository = async ({
 
     // 3. Process zip entries
     for (const zipPath of Object.keys(zip.files)) {
+      if (!Object.prototype.hasOwnProperty.call(zip.files, zipPath)) continue;
       const zipEntry = zip.files[zipPath];
       if (zipEntry.dir) continue;
 
@@ -3250,13 +3251,13 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
     .in('id', ownerIds);
 
   for (const p of (batchProfiles as any[]) || []) {
-    if (p?.id) profileMap[p.id] = p;
+    if (p?.id && !Object.prototype.hasOwnProperty.call(profileMap, '__proto__')) profileMap[p.id] = p;
   }
 
   // Second attempt: if batch returned nothing (RLS may have blocked it),
   // try fetching each profile individually — individual eq() calls sometimes
   // bypass stricter RLS policies that block .in() on other users' rows.
-  const missingIds = ownerIds.filter((id) => !profileMap[id]);
+  const missingIds = ownerIds.filter((id) => !Object.prototype.hasOwnProperty.call(profileMap, id));
   if (missingIds.length > 0) {
     await Promise.allSettled(
       missingIds.map(async (id) => {
@@ -3266,14 +3267,17 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
           .eq('id', id)
           .maybeSingle();
         if (data && (data as any).id) {
-          profileMap[(data as any).id] = data as any;
+          const safeId = String((data as any).id);
+          if (safeId !== '__proto__' && safeId !== 'constructor' && safeId !== 'prototype') {
+            profileMap[safeId] = data as any;
+          }
         }
       }),
     );
   }
 
   // Warn developer if profiles are still missing (RLS policy needs adding)
-  const stillMissing = ownerIds.filter((id) => !profileMap[id]);
+  const stillMissing = ownerIds.filter((id) => !Object.prototype.hasOwnProperty.call(profileMap, id));
   if (stillMissing.length > 0) {
     console.warn(
       '[CyberX] Could not fetch owner profiles for repos — user_profiles RLS may be blocking public reads.\n' +
@@ -3284,13 +3288,16 @@ export const listPublicToolRepositoriesWithOwners = async (): Promise<PublicRepo
 
   // 3. Merge
   return repos
-    .filter((repo) => !hasAccountLifecycleColumns || profileMap[repo.owner_id]?.account_status !== 'disabled')
-    .map((repo) => ({
-      ...repo,
-      ownerUsername: profileMap[repo.owner_id]?.username || '',
-      ownerFullName: profileMap[repo.owner_id]?.full_name || '',
-      ownerAvatarUrl: profileMap[repo.owner_id]?.avatar_url || '',
-    }));
+    .filter((repo) => !hasAccountLifecycleColumns || (Object.prototype.hasOwnProperty.call(profileMap, repo.owner_id) ? profileMap[repo.owner_id]?.account_status !== 'disabled' : true))
+    .map((repo) => {
+      const ownerProfile = Object.prototype.hasOwnProperty.call(profileMap, repo.owner_id) ? profileMap[repo.owner_id] : undefined;
+      return {
+        ...repo,
+        ownerUsername: ownerProfile?.username || '',
+        ownerFullName: ownerProfile?.full_name || '',
+        ownerAvatarUrl: ownerProfile?.avatar_url || '',
+      };
+    });
 };
 
 export const followUser = async (targetUserId: string): Promise<void> => {
@@ -3358,13 +3365,16 @@ export const getNotifications = async (): Promise<HubNotification[]> => {
     const { data: profiles } = await supabase
       .from('user_profiles').select('id, username, full_name, avatar_url').in('id', fromIds);
     for (const p of (profiles as any[]) || []) {
-      profileMap[p.id] = { username: p.username || '', avatarUrl: p.avatar_url || '', fullName: p.full_name || '' };
+      const safeId = String(p.id);
+      if (safeId !== '__proto__' && safeId !== 'constructor' && safeId !== 'prototype') {
+        profileMap[safeId] = { username: p.username || '', avatarUrl: p.avatar_url || '', fullName: p.full_name || '' };
+      }
     }
   }
   return rows.map((r) => ({
     id: r.id, type: r.type, from_user_id: r.from_user_id,
     message: r.message, read: r.read, created_at: r.created_at,
-    fromProfile: r.from_user_id ? (profileMap[r.from_user_id] ?? null) : null,
+    fromProfile: r.from_user_id ? ((Object.prototype.hasOwnProperty.call(profileMap, r.from_user_id) ? profileMap[r.from_user_id] : null) ?? null) : null,
   })) as HubNotification[];
 };
 

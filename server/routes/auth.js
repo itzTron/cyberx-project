@@ -159,6 +159,19 @@ const safeCompare = (a, b) => {
 };
 
 /**
+ * HTML-encode a string to prevent XSS when interpolating into HTML email templates.
+ */
+const escapeHtml = (str) => {
+  const s = String(str);
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+/**
  * Validate that a string is a plausible email address.
  */
 const isValidEmail = (email) =>
@@ -210,11 +223,11 @@ const buildOtpEmailHtml = (otp) => `
           <tr>
             <td style="padding:36px 32px;text-align:center;">
               <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">Use the code below to sign in to your account.</p>
-              <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">This code expires in <strong style="color:#a78bfa;">${OTP_EXPIRY_MINUTES} minutes</strong> and can only be used once.</p>
+              <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">This code expires in <strong style="color:#a78bfa;">${escapeHtml(OTP_EXPIRY_MINUTES)} minutes</strong> and can only be used once.</p>
 
               <!-- OTP box -->
               <div style="display:inline-block;background:#1a1a2e;border:2px solid #6366f1;border-radius:10px;padding:18px 36px;margin-bottom:28px;">
-                <span style="font-size:38px;font-weight:700;letter-spacing:10px;color:#a5b4fc;font-family:'Courier New',monospace;">${otp}</span>
+                <span style="font-size:38px;font-weight:700;letter-spacing:10px;color:#a5b4fc;font-family:'Courier New',monospace;">${escapeHtml(otp)}</span>
               </div>
 
               <p style="margin:0 0 8px;color:#6b7280;font-size:12px;">If you did not request this code, you can safely ignore this email.</p>
@@ -224,7 +237,7 @@ const buildOtpEmailHtml = (otp) => `
           <!-- Footer -->
           <tr>
             <td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
-              <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+              <p style="margin:0;color:#4b5563;font-size:11px;">© ${escapeHtml(new Date().getFullYear())} Cyberspace-X. All rights reserved.</p>
             </td>
           </tr>
         </table>
@@ -892,10 +905,10 @@ const buildReactivationEmailHtml = (reactivationLink) => `
               <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">You requested to reactivate your Cyberspace-X account.</p>
               <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">This link expires in <strong style="color:#fbbf24;">24 hours</strong>. If you did not request this, you can safely ignore this email.</p>
 
-              <a href="${reactivationLink}" style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;text-decoration:none;margin-bottom:28px;">Reactivate My Account</a>
+              <a href="${encodeURI(reactivationLink)}" style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;text-decoration:none;margin-bottom:28px;">Reactivate My Account</a>
 
               <p style="margin:20px 0 8px;color:#6b7280;font-size:12px;">Or copy and paste this link into your browser:</p>
-              <p style="margin:0;color:#4b5563;font-size:11px;word-break:break-all;">${reactivationLink}</p>
+              <p style="margin:0;color:#4b5563;font-size:11px;word-break:break-all;">${escapeHtml(reactivationLink)}</p>
 
               <div style="margin-top:28px;padding:16px;background:#1a1a2e;border:1px solid #292524;border-radius:8px;">
                 <p style="margin:0;color:#fbbf24;font-size:12px;font-weight:600;">⚠️ Important</p>
@@ -906,7 +919,7 @@ const buildReactivationEmailHtml = (reactivationLink) => `
           <!-- Footer -->
           <tr>
             <td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
-              <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+              <p style="margin:0;color:#4b5563;font-size:11px;">© ${escapeHtml(new Date().getFullYear())} Cyberspace-X. All rights reserved.</p>
             </td>
           </tr>
         </table>
@@ -1179,11 +1192,11 @@ const buildPasswordResetEmailHtml = (resetLink) => `
         <tr><td style="padding:36px 32px;text-align:center;">
           <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">We received a request to reset your Cyberspace-X password.</p>
           <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">This link expires in <strong style="color:#a78bfa;">1 hour</strong>. If you didn't request this, you can safely ignore it.</p>
-          <a href="${resetLink}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;text-decoration:none;margin-bottom:28px;">Reset Password</a>
-          <p style="margin:0;color:#4b5563;font-size:11px;word-break:break-all;">${resetLink}</p>
+          <a href="${encodeURI(resetLink)}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;text-decoration:none;margin-bottom:28px;">Reset Password</a>
+          <p style="margin:0;color:#4b5563;font-size:11px;word-break:break-all;">${escapeHtml(resetLink)}</p>
         </td></tr>
         <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
-          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${escapeHtml(new Date().getFullYear())} Cyberspace-X. All rights reserved.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -1203,22 +1216,22 @@ const buildPasswordConfirmEmailHtml = (confirmLink, disputeLink, userEmail) => `
           <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">Confirm Password Change</h1>
         </td></tr>
         <tr><td style="padding:36px 32px;text-align:center;">
-          <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">A password change was requested for <strong style="color:#a78bfa;">${userEmail}</strong>.</p>
+          <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">A password change was requested for <strong style="color:#a78bfa;">${escapeHtml(userEmail)}</strong>.</p>
           <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">Click <strong style="color:#a78bfa;">Yes, this was me</strong> to confirm. Your new password will be applied <strong style="color:#a78bfa;">immediately</strong> after confirmation.</p>
           <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
             <tr>
               <td style="padding-right:12px;">
-                <a href="${confirmLink}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">✓ Yes, this was me</a>
+                <a href="${encodeURI(confirmLink)}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">✓ Yes, this was me</a>
               </td>
               <td>
-                <a href="${disputeLink}" style="display:inline-block;background:linear-gradient(135deg,#ef4444,#b91c1c);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">✕ Not me — Cancel</a>
+                <a href="${encodeURI(disputeLink)}" style="display:inline-block;background:linear-gradient(135deg,#ef4444,#b91c1c);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">✕ Not me — Cancel</a>
               </td>
             </tr>
           </table>
           <p style="margin:0;color:#6b7280;font-size:12px;">These links expire in 1 hour. If you didn't make this request, click "Not me" immediately.</p>
         </td></tr>
         <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
-          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${escapeHtml(new Date().getFullYear())} Cyberspace-X. All rights reserved.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -1238,12 +1251,12 @@ const buildPasswordAppliedEmailHtml = (userEmail) => `
           <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">✅ Password Changed</h1>
         </td></tr>
         <tr><td style="padding:36px 32px;text-align:center;">
-          <p style="margin:0 0 12px;color:#9ca3af;font-size:14px;">Your password for <strong style="color:#a78bfa;">${userEmail}</strong> has been successfully updated.</p>
+          <p style="margin:0 0 12px;color:#9ca3af;font-size:14px;">Your password for <strong style="color:#a78bfa;">${escapeHtml(userEmail)}</strong> has been successfully updated.</p>
           <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">You can now sign in with your new password. If you did not make this change, contact support immediately.</p>
-          <a href="${FRONTEND_BASE}/signin" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Sign In</a>
+          <a href="${encodeURI(FRONTEND_BASE)}/signin" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Sign In</a>
         </td></tr>
         <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
-          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${escapeHtml(new Date().getFullYear())} Cyberspace-X. All rights reserved.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -1263,12 +1276,12 @@ const buildPasswordDisputeEmailHtml = (newRecoveryLink, userEmail) => `
           <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">⚠️ Change Cancelled</h1>
         </td></tr>
         <tr><td style="padding:36px 32px;text-align:center;">
-          <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">The password change for <strong style="color:#f87171;">${userEmail}</strong> has been <strong>cancelled</strong>.</p>
+          <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">The password change for <strong style="color:#f87171;">${escapeHtml(userEmail)}</strong> has been <strong>cancelled</strong>.</p>
           <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">Your previous password remains active. If someone else attempted this, use the link below to set a new password immediately.</p>
-          ${newRecoveryLink ? `<a href="${newRecoveryLink}" style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Set New Password Now</a>` : ''}
+          ${newRecoveryLink ? `<a href="${encodeURI(newRecoveryLink)}" style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#b45309);color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Set New Password Now</a>` : ''}
         </td></tr>
         <tr><td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
-          <p style="margin:0;color:#4b5563;font-size:11px;">© ${new Date().getFullYear()} Cyberspace-X. All rights reserved.</p>
+          <p style="margin:0;color:#4b5563;font-size:11px;">© ${escapeHtml(new Date().getFullYear())} Cyberspace-X. All rights reserved.</p>
         </td></tr>
       </table>
     </td></tr>
