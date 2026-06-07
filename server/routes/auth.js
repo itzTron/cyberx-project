@@ -757,6 +757,42 @@ const changeUsernameLimiter = rateLimit({
   message: { error: 'Too many username change attempts. Please wait before trying again.' },
 });
 
+const verifyCurrentPasswordOrThrow = async ({
+  userEmail,
+  currentPassword,
+  invalidPasswordMessage = 'Incorrect password.',
+}) => {
+  if (!currentPassword) {
+    const missingPasswordError = new Error('Current password is required.');
+    missingPasswordError.statusCode = 400;
+    throw missingPasswordError;
+  }
+
+  const anonKey = process.env.SUPABASE_ANON_KEY || '';
+  if (!anonKey) {
+    const configError = new Error('Server configuration error (missing anon key).');
+    configError.statusCode = 500;
+    throw configError;
+  }
+
+  const anonClient = createClient(SUPABASE_URL, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { error: signInErr } = await anonClient.auth.signInWithPassword({
+    email: userEmail,
+    password: currentPassword,
+  });
+
+  if (signInErr) {
+    const invalidPasswordError = new Error(invalidPasswordMessage);
+    invalidPasswordError.statusCode = 401;
+    throw invalidPasswordError;
+  }
+
+  await anonClient.auth.signOut().catch(() => {});
+};
+
 router.post('/change-username', changeUsernameLimiter, async (req, res) => {
   try {
     const userId       = (req.body?.userId || '').toString().trim();
@@ -782,23 +818,11 @@ router.post('/change-username', changeUsernameLimiter, async (req, res) => {
     }
     const userEmail = userData.user.email;
 
-    // 2. Verify password by attempting a sign-in with the anon client
-    // We create a fresh client with the anon key for this
-    const anonKey = process.env.SUPABASE_ANON_KEY || '';
-    if (!anonKey) {
-      return res.status(500).json({ error: 'Server configuration error (missing anon key).' });
-    }
-    const { createClient: createAnonClient } = require('@supabase/supabase-js');
-    const anonClient = createAnonClient(SUPABASE_URL, anonKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
+    await verifyCurrentPasswordOrThrow({
+      userEmail,
+      currentPassword,
+      invalidPasswordMessage: 'Incorrect password. Username was not changed.',
     });
-    const { error: signInErr } = await anonClient.auth.signInWithPassword({
-      email: userEmail,
-      password: currentPassword,
-    });
-    if (signInErr) {
-      return res.status(401).json({ error: 'Incorrect password. Username was not changed.' });
-    }
 
     // 3. Check uniqueness
     const { data: existing } = await adminSupabase
@@ -846,10 +870,11 @@ const getAccountActionConfig = (actionType) => {
       title: 'Confirm Account Disable',
       eyebrow: 'Cyberspace-X Security Check',
       intro: 'We received a request to temporarily disable your Cyberspace-X account.',
-      detail: 'Your account will remain active until you confirm this request from your primary email.',
+      detail: 'Your password has already been verified. Your account will remain active until you confirm this request from your primary email.',
       warning: 'If you do not reactivate within 60 days after disabling, your account and associated data will be permanently removed.',
-      buttonLabel: 'Disable My Account',
-      requestMessage: 'A confirmation email has been sent to your primary email address. Your account will only be disabled after you click the link.',
+      buttonLabel: 'Yes, Disable My Account',
+      cancelLabel: 'No, Keep My Account Active',
+      requestMessage: 'A confirmation email has been sent to your primary email address. Your account will only be disabled after you click Yes in that email.',
     };
   }
 
@@ -859,17 +884,18 @@ const getAccountActionConfig = (actionType) => {
       title: 'Confirm Permanent Deletion',
       eyebrow: 'Cyberspace-X Security Check',
       intro: 'We received a request to permanently delete your Cyberspace-X account.',
-      detail: 'Nothing will be deleted until you confirm this request from your primary email.',
+      detail: 'Your password has already been verified. Nothing will be deleted until you confirm this request from your primary email.',
       warning: 'This action is permanent. Your profile, repositories, notifications, reset records, and related account data will be removed.',
-      buttonLabel: 'Delete My Account',
-      requestMessage: 'A confirmation email has been sent to your primary email address. Your account will only be deleted after you click the link.',
+      buttonLabel: 'Yes, Delete My Account',
+      cancelLabel: 'No, Keep My Account',
+      requestMessage: 'A confirmation email has been sent to your primary email address. Your account will only be deleted after you click Yes in that email.',
     };
   }
 
   throw new Error(`Unsupported account action type: ${actionType}`);
 };
 
-const buildAccountActionEmailHtml = ({ actionType, confirmLink }) => {
+const buildAccountActionEmailHtml = ({ actionType, confirmLink, cancelLink }) => {
   const config = getAccountActionConfig(actionType);
   const accentGradient = actionType === 'delete' ? '#ef4444,#b91c1c' : '#f59e0b,#d97706';
   const accentText = actionType === 'delete' ? '#fca5a5' : '#fbbf24';
@@ -899,10 +925,13 @@ const buildAccountActionEmailHtml = ({ actionType, confirmLink }) => {
               <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">${escapeHtml(config.intro)}</p>
               <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">${escapeHtml(config.detail)}</p>
 
-              <a href="${encodeURI(confirmLink)}" style="display:inline-block;background:linear-gradient(135deg,${accentGradient});color:#ffffff;font-size:14px;font-weight:600;padding:14px 30px;border-radius:8px;text-decoration:none;margin-bottom:24px;">${escapeHtml(config.buttonLabel)}</a>
+              <div style="margin-bottom:24px;">
+                <a href="${encodeURI(confirmLink)}" style="display:inline-block;background:linear-gradient(135deg,${accentGradient});color:#ffffff;font-size:14px;font-weight:600;padding:14px 30px;border-radius:8px;text-decoration:none;margin:0 8px 12px;">${escapeHtml(config.buttonLabel)}</a>
+                <a href="${encodeURI(cancelLink)}" style="display:inline-block;background:#1f2937;border:1px solid #374151;color:#ffffff;font-size:14px;font-weight:600;padding:14px 30px;border-radius:8px;text-decoration:none;margin:0 8px 12px;">${escapeHtml(config.cancelLabel)}</a>
+              </div>
 
               <p style="margin:0 0 8px;color:#6b7280;font-size:12px;">This link expires in <strong style="color:${accentText};">${escapeHtml(ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS)} hour${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS === 1 ? '' : 's'}</strong>.</p>
-              <p style="margin:0 0 20px;color:#6b7280;font-size:12px;">If you did not request this action, you can safely ignore this email.</p>
+              <p style="margin:0 0 20px;color:#6b7280;font-size:12px;">If you did not request this action, click No or ignore this email.</p>
 
               <div style="padding:16px;background:#1a1a2e;border:1px solid #292524;border-radius:8px;text-align:left;">
                 <p style="margin:0;color:${accentText};font-size:12px;font-weight:600;">Important</p>
@@ -945,6 +974,7 @@ const sendAccountActionConfirmationEmail = async ({ req, supabase, user, actionT
   const config = getAccountActionConfig(actionType);
   const userEmail = (user.email || '').trim().toLowerCase();
   const confirmToken = crypto.randomBytes(32).toString('hex');
+  const cancelToken = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
 
   const { error: clearErr } = await supabase
@@ -963,6 +993,8 @@ const sendAccountActionConfirmationEmail = async ({ req, supabase, user, actionT
     user_email: userEmail,
     action_type: actionType,
     confirm_token: confirmToken,
+    cancel_token: cancelToken,
+    password_verified_at: new Date().toISOString(),
     expires_at: expiresAt,
     requested_from: req.ip || '',
   });
@@ -973,14 +1005,15 @@ const sendAccountActionConfirmationEmail = async ({ req, supabase, user, actionT
   }
 
   const confirmLink = `${getRequestBase(req)}/auth/account/confirm-action?token=${encodeURIComponent(confirmToken)}`;
+  const cancelLink = `${getRequestBase(req)}/auth/account/cancel-action?token=${encodeURIComponent(cancelToken)}`;
   const transporter = createTransporter();
 
   await transporter.sendMail({
     from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
     to: userEmail,
     subject: config.subject,
-    text: `${config.intro}\n\nConfirm here: ${confirmLink}\n\nThis link expires in ${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS} hour${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS === 1 ? '' : 's'}.\n\nIf you did not request this action, you can ignore this email.`,
-    html: buildAccountActionEmailHtml({ actionType, confirmLink }),
+    text: `${config.intro}\n\nYes: ${confirmLink}\nNo: ${cancelLink}\n\nThis link expires in ${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS} hour${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS === 1 ? '' : 's'}.\n\nIf you did not request this action, choose No or ignore this email.`,
+    html: buildAccountActionEmailHtml({ actionType, confirmLink, cancelLink }),
   });
 
   return config.requestMessage;
@@ -989,6 +1022,14 @@ const sendAccountActionConfirmationEmail = async ({ req, supabase, user, actionT
 router.post('/account/disable', accountLifecycleLimiter, async (req, res) => {
   try {
     const { supabase, user } = await getAuthenticatedSessionUser(req);
+    const currentPassword = (req.body?.currentPassword || '').toString();
+
+    await verifyCurrentPasswordOrThrow({
+      userEmail: (user.email || '').trim().toLowerCase(),
+      currentPassword,
+      invalidPasswordMessage: 'Incorrect password. Account disable email was not sent.',
+    });
+
     const { data: profile, error: fetchErr } = await supabase
       .from('user_profiles')
       .select('account_status')
@@ -1045,6 +1086,10 @@ router.get('/account/confirm-action', async (req, res) => {
 
     if (record.status === 'completed') {
       return res.redirect(buildAccountActionRedirect({ actionType, status: 'completed' }));
+    }
+
+    if (record.status === 'cancelled') {
+      return res.redirect(buildAccountActionRedirect({ actionType, status: 'cancelled' }));
     }
 
     if (record.status === 'expired' || new Date() > new Date(record.expires_at)) {
@@ -1151,6 +1196,59 @@ router.get('/account/confirm-action', async (req, res) => {
     return res.redirect(buildAccountActionRedirect({ actionType, status: 'completed' }));
   } catch (err) {
     console.error('[account/confirm-action] error:', err.message);
+    return res.redirect(buildAccountActionRedirect({ error: 'server_error' }));
+  }
+});
+
+router.get('/account/cancel-action', async (req, res) => {
+  try {
+    const token = (req.query?.token || '').toString().trim();
+    if (!token) {
+      return res.redirect(buildAccountActionRedirect({ error: 'missing_token' }));
+    }
+
+    const supabase = getAdminClient();
+    const { data: record, error: fetchErr } = await supabase
+      .from('pending_account_actions')
+      .select('*')
+      .eq('cancel_token', token)
+      .maybeSingle();
+
+    if (fetchErr || !record) {
+      return res.redirect(buildAccountActionRedirect({ error: 'invalid_token' }));
+    }
+
+    const actionType = (record.action_type || '').toString();
+    if (!['disable', 'delete'].includes(actionType)) {
+      return res.redirect(buildAccountActionRedirect({ error: 'invalid_token' }));
+    }
+
+    if (record.status === 'cancelled') {
+      return res.redirect(buildAccountActionRedirect({ actionType, status: 'cancelled' }));
+    }
+
+    if (record.status === 'completed') {
+      return res.redirect(buildAccountActionRedirect({ actionType, status: 'completed' }));
+    }
+
+    if (record.status === 'expired' || new Date() > new Date(record.expires_at)) {
+      await supabase.from('pending_account_actions').update({ status: 'expired' }).eq('id', record.id);
+      return res.redirect(buildAccountActionRedirect({ actionType, error: 'expired' }));
+    }
+
+    const { error: cancelErr } = await supabase
+      .from('pending_account_actions')
+      .update({ status: 'cancelled' })
+      .eq('id', record.id);
+
+    if (cancelErr) {
+      console.error('[account/cancel-action] cancel update error:', cancelErr.message);
+      return res.redirect(buildAccountActionRedirect({ actionType, error: 'server_error' }));
+    }
+
+    return res.redirect(buildAccountActionRedirect({ actionType, status: 'cancelled' }));
+  } catch (err) {
+    console.error('[account/cancel-action] error:', err.message);
     return res.redirect(buildAccountActionRedirect({ error: 'server_error' }));
   }
 });
@@ -1390,6 +1488,14 @@ router.post('/account/verify-reactivation', async (req, res) => {
 router.post('/account/delete', accountLifecycleLimiter, async (req, res) => {
   try {
     const { supabase, user } = await getAuthenticatedSessionUser(req);
+    const currentPassword = (req.body?.currentPassword || '').toString();
+
+    await verifyCurrentPasswordOrThrow({
+      userEmail: (user.email || '').trim().toLowerCase(),
+      currentPassword,
+      invalidPasswordMessage: 'Incorrect password. Account deletion email was not sent.',
+    });
+
     const message = await sendAccountActionConfirmationEmail({
       req,
       supabase,

@@ -21,6 +21,7 @@ const AccountActionConfirm = () => {
 
   const isDelete = action === 'delete';
   const isSuccess = status === 'completed';
+  const isCancelled = status === 'cancelled';
   const errorMessage = error ? (ERROR_MESSAGES[error] || 'Something went wrong while confirming this request.') : '';
 
   return (
@@ -61,6 +62,32 @@ const AccountActionConfirm = () => {
               <Button asChild className="w-full neon-border">
                 <Link to={isDelete ? '/signup' : '/signin'}>
                   {isDelete ? 'Go to Sign Up' : 'Go to Sign In'}
+                </Link>
+              </Button>
+            </GlassCard>
+          ) : isCancelled ? (
+            <GlassCard className="p-8 text-center space-y-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full border bg-primary/10 border-primary/20">
+                <Mail className="h-8 w-8 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">
+                  Request Cancelled
+                </h1>
+                <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                  {isDelete
+                    ? 'Your account deletion request was cancelled. Nothing was removed.'
+                    : 'Your account disable request was cancelled. Your account remains active.'}
+                </p>
+              </div>
+              <div className="rounded-lg bg-muted/30 border border-border p-4 text-left text-xs text-muted-foreground space-y-1.5">
+                <p className="font-semibold text-foreground text-sm">What happens now:</p>
+                <p>You can ignore the previous request email.</p>
+                <p>If you still want this action later, start a new request from profile settings.</p>
+              </div>
+              <Button asChild className="w-full neon-border">
+                <Link to={isDelete ? '/profile' : '/profile'}>
+                  Back to Profile
                 </Link>
               </Button>
             </GlassCard>

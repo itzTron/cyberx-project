@@ -164,8 +164,10 @@ const Profile = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
   const [isDisableDialogOpen, setIsDisableDialogOpen] = useState(false);
+  const [disableAccountPassword, setDisableAccountPassword] = useState('');
   const [isDisablingAccount, setIsDisablingAccount] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [accountActionFeedback, setAccountActionFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
@@ -639,19 +641,20 @@ const Profile = () => {
     setAccountActionFeedback(null);
 
     try {
-      const message = await disableCurrentUserAccount();
+      const message = await disableCurrentUserAccount(disableAccountPassword);
       toast({
         title: 'Confirmation Email Sent',
         description: message,
         duration: 9000,
       });
       setAccountActionFeedback({ tone: 'success', message });
+      setIsDisableDialogOpen(false);
+      setDisableAccountPassword('');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to disable account.';
       setAccountActionFeedback({ tone: 'error', message });
     } finally {
       setIsDisablingAccount(false);
-      setIsDisableDialogOpen(false);
     }
   };
 
@@ -660,19 +663,20 @@ const Profile = () => {
     setAccountActionFeedback(null);
 
     try {
-      const message = await deleteCurrentUserAccount();
+      const message = await deleteCurrentUserAccount(deleteAccountPassword);
       toast({
         title: 'Confirmation Email Sent',
         description: message,
         duration: 9000,
       });
       setAccountActionFeedback({ tone: 'success', message });
+      setIsDeleteDialogOpen(false);
+      setDeleteAccountPassword('');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to permanently delete account.';
       setAccountActionFeedback({ tone: 'error', message });
     } finally {
       setIsDeletingAccount(false);
-      setIsDeleteDialogOpen(false);
     }
   };
 
@@ -1508,7 +1512,7 @@ const Profile = () => {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-foreground">Temporarily disable account</p>
                       <p className="text-sm text-muted-foreground">
-                        A confirmation link will be sent to your primary email. Your account will only be disabled after you approve it there. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account will be permanently deactivated.
+                        Enter your current password, then we will send a confirmation email to your primary address. Your account will only be disabled after you press Yes there. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account will be permanently deactivated.
                       </p>
                     </div>
                     <Button
@@ -1526,7 +1530,7 @@ const Profile = () => {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-foreground">Permanently delete account</p>
                       <p className="text-sm text-muted-foreground">
-                        A confirmation link will be sent to your primary email. Nothing will be deleted until you approve it there. Once confirmed, your profile, repositories, notifications, reset records, and related account data will be removed.
+                        Enter your current password, then we will send a confirmation email to your primary address. Nothing will be deleted until you press Yes there. Once confirmed, your profile, repositories, notifications, reset records, and related account data will be removed.
                       </p>
                     </div>
                     <Button
@@ -1556,27 +1560,45 @@ const Profile = () => {
 
       <AlertDialog
         open={isDisableDialogOpen}
-        onOpenChange={setIsDisableDialogOpen}
+        onOpenChange={(open) => {
+          setIsDisableDialogOpen(open);
+          if (!open) {
+            setDisableAccountPassword('');
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Temporarily Disable Account</AlertDialogTitle>
             <AlertDialogDescription>
-              We will send a confirmation link to your primary email. Your account will only be disabled after you click that link. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account and all associated data will be permanently removed.
+              Enter your current password to verify this request. After that, we will email your primary address with Yes and No links. Your account will only be disabled if you press Yes in that email. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account and all associated data will be permanently removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Use the link in that email to finish disabling the account.
-          </p>
+          <div className="space-y-2">
+            <label htmlFor="disable-account-password" className="text-sm font-medium text-foreground">
+              Current Password
+            </label>
+            <Input
+              id="disable-account-password"
+              type="password"
+              value={disableAccountPassword}
+              onChange={(event) => setDisableAccountPassword(event.target.value)}
+              placeholder="Enter your current password"
+              autoComplete="current-password"
+            />
+            <p className="text-sm text-muted-foreground">
+              After password verification, check your primary email and choose Yes or No.
+            </p>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDisablingAccount}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 event.preventDefault();
-                if (isDisablingAccount) return;
+                if (isDisablingAccount || !disableAccountPassword.trim()) return;
                 void handleDisableAccount();
               }}
-              disabled={isDisablingAccount}
+              disabled={isDisablingAccount || !disableAccountPassword.trim()}
               className="border-amber-500/40 bg-amber-500 text-black hover:bg-amber-400"
             >
               {isDisablingAccount ? 'Sending...' : 'Send Confirmation Email'}
@@ -1587,27 +1609,45 @@ const Profile = () => {
 
       <AlertDialog
         open={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open);
+          if (!open) {
+            setDeleteAccountPassword('');
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Account Permanently</AlertDialogTitle>
             <AlertDialogDescription>
-              We will send a confirmation link to your primary email. Your account will only be permanently deleted after you click that link. Your primary email will become available for a new signup after deletion.
+              Enter your current password to verify this request. After that, we will email your primary address with Yes and No links. Your account will only be permanently deleted if you press Yes in that email. Your primary email will become available for a new signup after deletion.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Use the link in that email to finish deleting the account.
-          </p>
+          <div className="space-y-2">
+            <label htmlFor="delete-account-password" className="text-sm font-medium text-foreground">
+              Current Password
+            </label>
+            <Input
+              id="delete-account-password"
+              type="password"
+              value={deleteAccountPassword}
+              onChange={(event) => setDeleteAccountPassword(event.target.value)}
+              placeholder="Enter your current password"
+              autoComplete="current-password"
+            />
+            <p className="text-sm text-muted-foreground">
+              After password verification, check your primary email and choose Yes or No.
+            </p>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeletingAccount}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 event.preventDefault();
-                if (isDeletingAccount) return;
+                if (isDeletingAccount || !deleteAccountPassword.trim()) return;
                 void handleDeleteAccount();
               }}
-              disabled={isDeletingAccount}
+              disabled={isDeletingAccount || !deleteAccountPassword.trim()}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeletingAccount ? 'Sending...' : 'Send Confirmation Email'}

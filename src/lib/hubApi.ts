@@ -1468,12 +1468,12 @@ export const updateCurrentUserProfile = async ({
   });
 };
 
-export const disableCurrentUserAccount = async (): Promise<string> => {
+export const disableCurrentUserAccount = async (currentPassword: string): Promise<string> => {
   const headers = await getAuthenticatedServerHeaders();
   const response = await fetch(`${API_BASE_URL}/auth/account/disable`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({}),
+    body: JSON.stringify({ currentPassword }),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1513,12 +1513,12 @@ export const verifyReactivationToken = async (token: string): Promise<{ message:
   };
 };
 
-export const deleteCurrentUserAccount = async (): Promise<string> => {
+export const deleteCurrentUserAccount = async (currentPassword: string): Promise<string> => {
   const headers = await getAuthenticatedServerHeaders();
   const response = await fetch(`${API_BASE_URL}/auth/account/delete`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({}),
+    body: JSON.stringify({ currentPassword }),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
