@@ -140,6 +140,7 @@ const verifyOtpLimiter = rateLimit({
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const OTP_EXPIRY_MINUTES = 5;
 const MAX_ATTEMPTS = 3;
+const ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS = 1;
 
 /**
  * Generate a cryptographically secure 6-digit OTP string.
@@ -838,41 +839,319 @@ const accountLifecycleLimiter = rateLimit({
   message: { error: 'Too many account management requests. Please wait and try again.' },
 });
 
+const getAccountActionConfig = (actionType) => {
+  if (actionType === 'disable') {
+    return {
+      subject: 'Confirm your Cyberspace-X account disable request',
+      title: 'Confirm Account Disable',
+      eyebrow: 'Cyberspace-X Security Check',
+      intro: 'We received a request to temporarily disable your Cyberspace-X account.',
+      detail: 'Your account will remain active until you confirm this request from your primary email.',
+      warning: 'If you do not reactivate within 60 days after disabling, your account and associated data will be permanently removed.',
+      buttonLabel: 'Disable My Account',
+      requestMessage: 'A confirmation email has been sent to your primary email address. Your account will only be disabled after you click the link.',
+    };
+  }
+
+  if (actionType === 'delete') {
+    return {
+      subject: 'Confirm permanent deletion of your Cyberspace-X account',
+      title: 'Confirm Permanent Deletion',
+      eyebrow: 'Cyberspace-X Security Check',
+      intro: 'We received a request to permanently delete your Cyberspace-X account.',
+      detail: 'Nothing will be deleted until you confirm this request from your primary email.',
+      warning: 'This action is permanent. Your profile, repositories, notifications, reset records, and related account data will be removed.',
+      buttonLabel: 'Delete My Account',
+      requestMessage: 'A confirmation email has been sent to your primary email address. Your account will only be deleted after you click the link.',
+    };
+  }
+
+  throw new Error(`Unsupported account action type: ${actionType}`);
+};
+
+const buildAccountActionEmailHtml = ({ actionType, confirmLink }) => {
+  const config = getAccountActionConfig(actionType);
+  const accentGradient = actionType === 'delete' ? '#ef4444,#b91c1c' : '#f59e0b,#d97706';
+  const accentText = actionType === 'delete' ? '#fca5a5' : '#fbbf24';
+  const eyebrowColor = actionType === 'delete' ? '#fee2e2' : '#fffbeb';
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(config.title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0f;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="520" cellpadding="0" cellspacing="0" style="background:#11111a;border:1px solid #1e1e2e;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,${accentGradient});padding:28px 32px;text-align:center;">
+              <p style="margin:0;font-size:11px;letter-spacing:3px;color:${eyebrowColor};text-transform:uppercase;font-weight:600;">${escapeHtml(config.eyebrow)}</p>
+              <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">${escapeHtml(config.title)}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:36px 32px;text-align:center;">
+              <p style="margin:0 0 8px;color:#9ca3af;font-size:14px;">${escapeHtml(config.intro)}</p>
+              <p style="margin:0 0 28px;color:#6b7280;font-size:12px;">${escapeHtml(config.detail)}</p>
+
+              <a href="${encodeURI(confirmLink)}" style="display:inline-block;background:linear-gradient(135deg,${accentGradient});color:#ffffff;font-size:14px;font-weight:600;padding:14px 30px;border-radius:8px;text-decoration:none;margin-bottom:24px;">${escapeHtml(config.buttonLabel)}</a>
+
+              <p style="margin:0 0 8px;color:#6b7280;font-size:12px;">This link expires in <strong style="color:${accentText};">${escapeHtml(ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS)} hour${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS === 1 ? '' : 's'}</strong>.</p>
+              <p style="margin:0 0 20px;color:#6b7280;font-size:12px;">If you did not request this action, you can safely ignore this email.</p>
+
+              <div style="padding:16px;background:#1a1a2e;border:1px solid #292524;border-radius:8px;text-align:left;">
+                <p style="margin:0;color:${accentText};font-size:12px;font-weight:600;">Important</p>
+                <p style="margin:6px 0 0;color:#9ca3af;font-size:12px;">${escapeHtml(config.warning)}</p>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 32px;border-top:1px solid #1e1e2e;text-align:center;">
+              <p style="margin:0;color:#4b5563;font-size:11px;">&copy; ${escapeHtml(new Date().getFullYear())} Cyberspace-X. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+};
+
+const buildAccountActionRedirect = ({ actionType = '', status = '', error = '' }) => {
+  const params = new URLSearchParams();
+  if (actionType) params.set('action', actionType);
+  if (status) params.set('status', status);
+  if (error) params.set('error', error);
+  return `${FRONTEND_BASE}/account-action-confirm?${params.toString()}`;
+};
+
+const isMissingUserDeleteError = (error) =>
+  /user.*not found|not found|does not exist/i.test((error?.message || '').toString());
+
+const sendAccountActionConfirmationEmail = async ({ req, supabase, user, actionType }) => {
+  if (!SMTP_USER || !SMTP_PASS) {
+    const emailConfigError = new Error('Email service is not configured on the server.');
+    emailConfigError.statusCode = 500;
+    throw emailConfigError;
+  }
+
+  const config = getAccountActionConfig(actionType);
+  const userEmail = (user.email || '').trim().toLowerCase();
+  const confirmToken = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
+
+  const { error: clearErr } = await supabase
+    .from('pending_account_actions')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('status', 'pending');
+
+  if (clearErr) {
+    console.error(`[account/${actionType}] pending cleanup error:`, clearErr.message);
+    throw new Error(`Failed to prepare ${actionType} confirmation.`);
+  }
+
+  const { error: insertErr } = await supabase.from('pending_account_actions').insert({
+    user_id: user.id,
+    user_email: userEmail,
+    action_type: actionType,
+    confirm_token: confirmToken,
+    expires_at: expiresAt,
+    requested_from: req.ip || '',
+  });
+
+  if (insertErr) {
+    console.error(`[account/${actionType}] insert error:`, insertErr.message);
+    throw new Error(`Failed to prepare ${actionType} confirmation.`);
+  }
+
+  const confirmLink = `${getRequestBase(req)}/auth/account/confirm-action?token=${encodeURIComponent(confirmToken)}`;
+  const transporter = createTransporter();
+
+  await transporter.sendMail({
+    from: SMTP_FROM || `"Cyberspace-X" <${SMTP_USER}>`,
+    to: userEmail,
+    subject: config.subject,
+    text: `${config.intro}\n\nConfirm here: ${confirmLink}\n\nThis link expires in ${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS} hour${ACCOUNT_ACTION_CONFIRM_EXPIRY_HOURS === 1 ? '' : 's'}.\n\nIf you did not request this action, you can ignore this email.`,
+    html: buildAccountActionEmailHtml({ actionType, confirmLink }),
+  });
+
+  return config.requestMessage;
+};
+
 router.post('/account/disable', accountLifecycleLimiter, async (req, res) => {
   try {
     const { supabase, user } = await getAuthenticatedSessionUser(req);
-    const disabledAt = new Date().toISOString();
-
-    const { error: updateErr } = await supabase
+    const { data: profile, error: fetchErr } = await supabase
       .from('user_profiles')
-      .update({
-        account_status: 'disabled',
-        account_disabled_at: disabledAt,
-      })
-      .eq('id', user.id);
+      .select('account_status')
+      .eq('id', user.id)
+      .maybeSingle();
 
-    if (updateErr) {
-      console.error('[account/disable] profile update error:', updateErr.message);
-      return res.status(500).json({ error: 'Failed to disable account. Please try again.' });
+    if (fetchErr) {
+      console.error('[account/disable] profile fetch error:', fetchErr.message);
+      return res.status(500).json({ error: 'Failed to prepare account disable confirmation. Please try again.' });
     }
 
-    await Promise.allSettled([
-      supabase.from('pending_password_changes').delete().eq('user_id', user.id),
-      supabase.from('otp_tokens').delete().like('email', `secondary:${user.id}:%`),
-      supabase.from('activity_logs').insert({
-        user_id: user.id,
-        email: (user.email || '').trim().toLowerCase(),
-        activity_type: 'account_disabled',
-        activity_context: { source: 'profile_settings' },
-      }),
-    ]);
+    if (profile?.account_status === 'disabled') {
+      return res.status(400).json({ error: 'This account is already disabled.' });
+    }
 
-    return res.status(200).json({ message: 'Account disabled successfully.' });
+    const message = await sendAccountActionConfirmationEmail({
+      req,
+      supabase,
+      user,
+      actionType: 'disable',
+    });
+
+    return res.status(200).json({ message });
   } catch (err) {
     console.error('[account/disable] error:', err.message);
     return res.status(err.statusCode || 500).json({
-      error: err.statusCode === 401 ? err.message : 'Failed to disable account. Please try again.',
+      error: err.statusCode === 401 ? err.message : 'Failed to send account disable confirmation email. Please try again.',
     });
+  }
+});
+
+router.get('/account/confirm-action', async (req, res) => {
+  try {
+    const token = (req.query?.token || '').toString().trim();
+    if (!token) {
+      return res.redirect(buildAccountActionRedirect({ error: 'missing_token' }));
+    }
+
+    const supabase = getAdminClient();
+    const { data: record, error: fetchErr } = await supabase
+      .from('pending_account_actions')
+      .select('*')
+      .eq('confirm_token', token)
+      .maybeSingle();
+
+    if (fetchErr || !record) {
+      return res.redirect(buildAccountActionRedirect({ error: 'invalid_token' }));
+    }
+
+    const actionType = (record.action_type || '').toString();
+    if (!['disable', 'delete'].includes(actionType)) {
+      return res.redirect(buildAccountActionRedirect({ error: 'invalid_token' }));
+    }
+
+    if (record.status === 'completed') {
+      return res.redirect(buildAccountActionRedirect({ actionType, status: 'completed' }));
+    }
+
+    if (record.status === 'expired' || new Date() > new Date(record.expires_at)) {
+      await supabase.from('pending_account_actions').update({ status: 'expired' }).eq('id', record.id);
+      return res.redirect(buildAccountActionRedirect({ actionType, error: 'expired' }));
+    }
+
+    const confirmedAt = new Date().toISOString();
+
+    if (actionType === 'disable') {
+      const { data: profile, error: profileErr } = await supabase
+        .from('user_profiles')
+        .select('account_status')
+        .eq('id', record.user_id)
+        .maybeSingle();
+
+      if (profileErr || !profile) {
+        console.error('[account/confirm-action] disable profile fetch error:', profileErr?.message || 'profile not found');
+        return res.redirect(buildAccountActionRedirect({ actionType, error: 'server_error' }));
+      }
+
+      if (profile.account_status !== 'disabled') {
+        const { error: updateErr } = await supabase
+          .from('user_profiles')
+          .update({
+            account_status: 'disabled',
+            account_disabled_at: confirmedAt,
+          })
+          .eq('id', record.user_id);
+
+        if (updateErr) {
+          console.error('[account/confirm-action] disable profile update error:', updateErr.message);
+          return res.redirect(buildAccountActionRedirect({ actionType, error: 'server_error' }));
+        }
+      }
+
+      await Promise.allSettled([
+        supabase.from('pending_password_changes').delete().eq('user_id', record.user_id),
+        supabase.from('otp_tokens').delete().like('email', `secondary:${record.user_id}:%`),
+        supabase.from('activity_logs').insert({
+          user_id: record.user_id,
+          email: (record.user_email || '').trim().toLowerCase(),
+          activity_type: 'account_disabled',
+          activity_context: { source: 'email_link' },
+        }),
+        supabase
+          .from('pending_account_actions')
+          .update({ status: 'expired' })
+          .eq('user_id', record.user_id)
+          .eq('status', 'pending')
+          .neq('id', record.id),
+      ]);
+    }
+
+    if (actionType === 'delete') {
+      const { data: profile, error: profileErr } = await supabase
+        .from('user_profiles')
+        .select('secondary_email')
+        .eq('id', record.user_id)
+        .maybeSingle();
+
+      if (profileErr) {
+        console.error('[account/confirm-action] delete profile fetch error:', profileErr.message);
+        return res.redirect(buildAccountActionRedirect({ actionType, error: 'server_error' }));
+      }
+
+      await Promise.allSettled([
+        supabase
+          .from('pending_account_actions')
+          .update({ status: 'expired' })
+          .eq('user_id', record.user_id)
+          .eq('status', 'pending')
+          .neq('id', record.id),
+      ]);
+
+      await cleanupAccountArtifacts({
+        supabase,
+        userId: record.user_id,
+        primaryEmail: record.user_email || '',
+        secondaryEmail: profile?.secondary_email || '',
+      });
+
+      const { error: deleteErr } = await supabase.auth.admin.deleteUser(record.user_id, false);
+      if (deleteErr && !isMissingUserDeleteError(deleteErr)) {
+        console.error('[account/confirm-action] auth delete error:', deleteErr.message);
+        return res.redirect(buildAccountActionRedirect({ actionType, error: 'server_error' }));
+      }
+    }
+
+    const { error: completeErr } = await supabase
+      .from('pending_account_actions')
+      .update({
+        status: 'completed',
+        confirmed_at: confirmedAt,
+        completed_at: confirmedAt,
+      })
+      .eq('id', record.id);
+
+    if (completeErr) {
+      console.error('[account/confirm-action] completion update error:', completeErr.message);
+      return res.redirect(buildAccountActionRedirect({ actionType, error: 'server_error' }));
+    }
+
+    return res.redirect(buildAccountActionRedirect({ actionType, status: 'completed' }));
+  } catch (err) {
+    console.error('[account/confirm-action] error:', err.message);
+    return res.redirect(buildAccountActionRedirect({ error: 'server_error' }));
   }
 });
 
@@ -1110,43 +1389,19 @@ router.post('/account/verify-reactivation', async (req, res) => {
 
 router.post('/account/delete', accountLifecycleLimiter, async (req, res) => {
   try {
-    const confirmation = (req.body?.confirmation || '').toString().trim().toUpperCase();
-    if (confirmation !== 'DELETE') {
-      return res.status(400).json({ error: 'Type DELETE to permanently remove your account.' });
-    }
-
     const { supabase, user } = await getAuthenticatedSessionUser(req);
-    const normalizedPrimaryEmail = (user.email || '').trim().toLowerCase();
-
-    const { data: profile, error: profileErr } = await supabase
-      .from('user_profiles')
-      .select('secondary_email')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    if (profileErr) {
-      console.error('[account/delete] profile fetch error:', profileErr.message);
-      return res.status(500).json({ error: 'Failed to prepare account deletion. Please try again.' });
-    }
-
-    await cleanupAccountArtifacts({
+    const message = await sendAccountActionConfirmationEmail({
+      req,
       supabase,
-      userId: user.id,
-      primaryEmail: normalizedPrimaryEmail,
-      secondaryEmail: profile?.secondary_email || '',
+      user,
+      actionType: 'delete',
     });
 
-    const { error: deleteErr } = await supabase.auth.admin.deleteUser(user.id, false);
-    if (deleteErr) {
-      console.error('[account/delete] auth delete error:', deleteErr.message);
-      return res.status(500).json({ error: 'Failed to permanently delete account. Please try again.' });
-    }
-
-    return res.status(200).json({ message: 'Account deleted permanently.' });
+    return res.status(200).json({ message });
   } catch (err) {
     console.error('[account/delete] error:', err.message);
     return res.status(err.statusCode || 500).json({
-      error: err.statusCode === 401 ? err.message : 'Failed to permanently delete account. Please try again.',
+      error: err.statusCode === 401 ? err.message : 'Failed to send account deletion confirmation email. Please try again.',
     });
   }
 });

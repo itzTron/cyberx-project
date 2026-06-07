@@ -1468,7 +1468,7 @@ export const updateCurrentUserProfile = async ({
   });
 };
 
-export const disableCurrentUserAccount = async (): Promise<void> => {
+export const disableCurrentUserAccount = async (): Promise<string> => {
   const headers = await getAuthenticatedServerHeaders();
   const response = await fetch(`${API_BASE_URL}/auth/account/disable`, {
     method: 'POST',
@@ -1479,6 +1479,7 @@ export const disableCurrentUserAccount = async (): Promise<void> => {
   if (!response.ok) {
     throw new Error((body as { error?: string }).error || 'Failed to disable account.');
   }
+  return ((body as { message?: string }).message || 'Confirmation email sent. Check your inbox.').trim();
 };
 
 export const reactivateCurrentUserAccount = async (): Promise<string> => {
@@ -1512,19 +1513,18 @@ export const verifyReactivationToken = async (token: string): Promise<{ message:
   };
 };
 
-export const deleteCurrentUserAccount = async (): Promise<void> => {
-  const { user } = await ensureAuthenticatedUser();
+export const deleteCurrentUserAccount = async (): Promise<string> => {
   const headers = await getAuthenticatedServerHeaders();
   const response = await fetch(`${API_BASE_URL}/auth/account/delete`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ confirmation: 'DELETE' }),
+    body: JSON.stringify({}),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error((body as { error?: string }).error || 'Failed to permanently delete account.');
   }
-  clearLocalProfileExtras(user.id);
+  return ((body as { message?: string }).message || 'Confirmation email sent. Check your inbox.').trim();
 };
 
 export const updateCurrentUserEmail = async (email: string) => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { AlertTriangle, Camera, Check, Copy, ExternalLink, Github, Globe, Linkedin, LoaderCircle, Lock, Mail, MapPin, Navigation2, Phone, Plus, Save, Search, ShieldOff, Trash2, X } from 'lucide-react';
 import Cropper, { type Area } from 'react-easy-crop';
 
@@ -40,7 +40,6 @@ import {
   changeUsername,
   disableCurrentUserAccount,
   deleteCurrentUserAccount,
-  signOutDashboardUser,
   type HubUserProfile,
 } from '@/lib/hubApi';
 import { loadGoogleMapsApi } from '@/lib/googleMaps';
@@ -119,7 +118,6 @@ const createCroppedAvatarDataUrl = async (imageUrl: string, pixelCrop: Area) => 
 };
 
 const Profile = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [accessError, setAccessError] = useState('');
@@ -166,12 +164,10 @@ const Profile = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
   const [isDisableDialogOpen, setIsDisableDialogOpen] = useState(false);
-  const [disableConfirmText, setDisableConfirmText] = useState('');
   const [isDisablingAccount, setIsDisablingAccount] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-  const [accountActionStatus, setAccountActionStatus] = useState('');
+  const [accountActionFeedback, setAccountActionFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
   const [cropSourceImage, setCropSourceImage] = useState('');
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -640,43 +636,43 @@ const Profile = () => {
 
   const handleDisableAccount = async () => {
     setIsDisablingAccount(true);
-    setAccountActionStatus('');
+    setAccountActionFeedback(null);
 
     try {
-      await disableCurrentUserAccount();
+      const message = await disableCurrentUserAccount();
       toast({
-        title: '⚠️ Account Disabled',
-        description: 'If you do not reactivate your account within 60 days, it will be permanently deactivated and all your data will be removed.',
-        variant: 'destructive',
-        duration: 10000,
+        title: 'Confirmation Email Sent',
+        description: message,
+        duration: 9000,
       });
-      await signOutDashboardUser().catch(() => {});
-      navigate('/signin', { replace: true });
+      setAccountActionFeedback({ tone: 'success', message });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to disable account.';
-      setAccountActionStatus(message);
+      setAccountActionFeedback({ tone: 'error', message });
     } finally {
       setIsDisablingAccount(false);
       setIsDisableDialogOpen(false);
-      setDisableConfirmText('');
     }
   };
 
   const handleDeleteAccount = async () => {
     setIsDeletingAccount(true);
-    setAccountActionStatus('');
+    setAccountActionFeedback(null);
 
     try {
-      await deleteCurrentUserAccount();
-      await signOutDashboardUser().catch(() => {});
-      navigate('/signup', { replace: true });
+      const message = await deleteCurrentUserAccount();
+      toast({
+        title: 'Confirmation Email Sent',
+        description: message,
+        duration: 9000,
+      });
+      setAccountActionFeedback({ tone: 'success', message });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to permanently delete account.';
-      setAccountActionStatus(message);
+      setAccountActionFeedback({ tone: 'error', message });
     } finally {
       setIsDeletingAccount(false);
       setIsDeleteDialogOpen(false);
-      setDeleteConfirmText('');
     }
   };
 
@@ -1484,7 +1480,7 @@ const Profile = () => {
                 <CardHeader>
                   <CardTitle>Account Access</CardTitle>
                   <CardDescription>
-                    Temporarily disable your account or permanently delete it. Permanent deletion removes your account data and frees your primary email so it can be used again.
+                    Temporarily disable your account or permanently delete it. Both actions now require approval from a confirmation link sent to your primary email.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -1512,7 +1508,7 @@ const Profile = () => {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-foreground">Temporarily disable account</p>
                       <p className="text-sm text-muted-foreground">
-                        You will be signed out immediately. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account will be permanently deactivated.
+                        A confirmation link will be sent to your primary email. Your account will only be disabled after you approve it there. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account will be permanently deactivated.
                       </p>
                     </div>
                     <Button
@@ -1522,7 +1518,7 @@ const Profile = () => {
                       onClick={() => setIsDisableDialogOpen(true)}
                     >
                       <ShieldOff className="h-4 w-4 mr-2" />
-                      Temporarily Disable
+                      Send Disable Email
                     </Button>
                   </div>
 
@@ -1530,7 +1526,7 @@ const Profile = () => {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-foreground">Permanently delete account</p>
                       <p className="text-sm text-muted-foreground">
-                        This action cannot be undone. Your profile, repositories, notifications, reset records, and related account data will be removed.
+                        A confirmation link will be sent to your primary email. Nothing will be deleted until you approve it there. Once confirmed, your profile, repositories, notifications, reset records, and related account data will be removed.
                       </p>
                     </div>
                     <Button
@@ -1539,14 +1535,16 @@ const Profile = () => {
                       onClick={() => setIsDeleteDialogOpen(true)}
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Account Permanently
+                      Send Delete Email
                     </Button>
                   </div>
 
-                  {accountActionStatus && (
-                    <p className="text-sm text-destructive flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                      {accountActionStatus}
+                  {accountActionFeedback && (
+                    <p className={`text-sm flex items-center gap-2 ${accountActionFeedback.tone === 'error' ? 'text-destructive' : 'text-green-400'}`}>
+                      {accountActionFeedback.tone === 'error'
+                        ? <AlertTriangle className="h-4 w-4 shrink-0" />
+                        : <Check className="h-4 w-4 shrink-0" />}
+                      {accountActionFeedback.message}
                     </p>
                   )}
                 </CardContent>
@@ -1558,43 +1556,30 @@ const Profile = () => {
 
       <AlertDialog
         open={isDisableDialogOpen}
-        onOpenChange={(open) => {
-          setIsDisableDialogOpen(open);
-          if (!open) {
-            setDisableConfirmText('');
-          }
-        }}
+        onOpenChange={setIsDisableDialogOpen}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Temporarily Disable Account</AlertDialogTitle>
             <AlertDialogDescription>
-              Your account will be hidden from normal use until you reactivate it. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account and all associated data will be permanently removed.
+              We will send a confirmation link to your primary email. Your account will only be disabled after you click that link. If you do not reactivate within <span className="font-semibold text-amber-400">60 days</span>, your account and all associated data will be permanently removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Type <span className="font-semibold text-foreground">DISABLE</span> to confirm.
-            </p>
-            <Input
-              value={disableConfirmText}
-              onChange={(event) => setDisableConfirmText(event.target.value)}
-              placeholder="DISABLE"
-              autoComplete="off"
-            />
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Use the link in that email to finish disabling the account.
+          </p>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDisablingAccount}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 event.preventDefault();
-                if (disableConfirmText.trim().toUpperCase() !== 'DISABLE' || isDisablingAccount) return;
+                if (isDisablingAccount) return;
                 void handleDisableAccount();
               }}
-              disabled={disableConfirmText.trim().toUpperCase() !== 'DISABLE' || isDisablingAccount}
+              disabled={isDisablingAccount}
               className="border-amber-500/40 bg-amber-500 text-black hover:bg-amber-400"
             >
-              {isDisablingAccount ? 'Disabling...' : 'Disable Account'}
+              {isDisablingAccount ? 'Sending...' : 'Send Confirmation Email'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1602,43 +1587,30 @@ const Profile = () => {
 
       <AlertDialog
         open={isDeleteDialogOpen}
-        onOpenChange={(open) => {
-          setIsDeleteDialogOpen(open);
-          if (!open) {
-            setDeleteConfirmText('');
-          }
-        }}
+        onOpenChange={setIsDeleteDialogOpen}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Account Permanently</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes your account. Your primary email will become available for a new signup after deletion.
+              We will send a confirmation link to your primary email. Your account will only be permanently deleted after you click that link. Your primary email will become available for a new signup after deletion.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Type <span className="font-semibold text-foreground">DELETE</span> to confirm permanent deletion.
-            </p>
-            <Input
-              value={deleteConfirmText}
-              onChange={(event) => setDeleteConfirmText(event.target.value)}
-              placeholder="DELETE"
-              autoComplete="off"
-            />
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Use the link in that email to finish deleting the account.
+          </p>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeletingAccount}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={(event) => {
                 event.preventDefault();
-                if (deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingAccount) return;
+                if (isDeletingAccount) return;
                 void handleDeleteAccount();
               }}
-              disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingAccount}
+              disabled={isDeletingAccount}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isDeletingAccount ? 'Deleting...' : 'Delete Account'}
+              {isDeletingAccount ? 'Sending...' : 'Send Confirmation Email'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

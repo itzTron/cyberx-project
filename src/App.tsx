@@ -27,6 +27,7 @@ import ResetPassword from "./pages/ResetPassword";
 import PasswordChangeConfirm from "./pages/PasswordChangeConfirm";
 import PasswordChangeDispute from "./pages/PasswordChangeDispute";
 import ReactivateAccount from "./pages/ReactivateAccount";
+import AccountActionConfirm from "./pages/AccountActionConfirm";
 
 const queryClient = new QueryClient();
 
@@ -69,6 +70,7 @@ const App = () => {
             <Route path="/password-change-confirm" element={<PasswordChangeConfirm />} />
             <Route path="/password-change-dispute" element={<PasswordChangeDispute />} />
             <Route path="/reactivate-account" element={<ReactivateAccount />} />
+            <Route path="/account-action-confirm" element={<AccountActionConfirm />} />
             <Route path="/:username" element={<Dashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
