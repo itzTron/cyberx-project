@@ -8,6 +8,9 @@ update public.pending_account_actions
 set cancel_token = gen_random_uuid()::text
 where cancel_token is null;
 
+alter table if exists public.pending_account_actions
+  drop constraint if exists pending_account_actions_status_check;
+
 do $$
 declare
   constraint_name text;
@@ -17,7 +20,7 @@ begin
     from pg_constraint c
     where c.conrelid = 'public.pending_account_actions'::regclass
       and c.contype = 'c'
-      and pg_get_constraintdef(c.oid) like '%status IN (%'
+      and (pg_get_constraintdef(c.oid) like '%status IN (%' or pg_get_constraintdef(c.oid) like '%status%')
   loop
     execute format(
       'alter table public.pending_account_actions drop constraint if exists %I',

@@ -225,17 +225,21 @@
   animation: preloader-logo-pulse 2.5s ease-in-out infinite;
 }
 
-.repository-code-editor .cm-editor {
-  height: 100%;
-  font-family: 'JetBrains Mono', monospace;
+.repository-code-editor,
+.repository-code-editor .cm-editor,
+.repository-code-editor .cm-scroller,
+.repository-code-editor .cm-content,
+.repository-code-editor .cm-line,
+.repository-code-editor .cm-gutters,
+.repository-code-editor .cm-gutterElement {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  letter-spacing: 0 !important;
 }
 
-.repository-code-editor .cm-scroller,
-.repository-code-editor .cm-gutters {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
-  line-height: 1.5;
-  letter-spacing: 0;
+.repository-code-editor .cm-editor {
+  height: 100%;
 }
 
 .repository-code-editor .cm-scroller {
