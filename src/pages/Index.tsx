@@ -121,8 +121,7 @@ const Index = () => {
             </h1>
 
             <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              A practical security platform built around the CyberX toolkit for network analysis, threat detection,
-              and secure operational workflows.
+              A Virtual platform to store, edit and manage your projects
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
@@ -160,9 +159,9 @@ const Index = () => {
                         ) : (
                           <AnimatedCounter target={repoCount} />
                         )
-                      ) : (
+                      ) : 'display' in stat ? (
                         stat.display
-                      )}
+                      ) : null}
                     </div>
                     <div className="text-sm text-muted-foreground">{stat.label}</div>
                     {'href' in stat && (

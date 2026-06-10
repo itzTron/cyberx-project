@@ -70,7 +70,7 @@ const Tools = () => {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-3xl mx-auto">
             <span className="inline-block px-4 py-1.5 rounded-full text-xs font-mono font-medium bg-primary/10 text-primary border border-primary/30 mb-4">REPOS</span>
             <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              <span className="text-foreground">Security </span>
+              <span className="text-foreground">Public posted </span>
               <span className="text-primary neon-text">Repos</span>
             </h1>
             <p className="text-xl text-muted-foreground">Explore the community-maintained public repo list.</p>
